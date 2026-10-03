@@ -9,7 +9,7 @@ services:
       PROSODY_LOGLEVEL: debug
       PROSODY_PLUGIN_PATHS: /opt/xmpp-modules
       # Comma-separated list of modules under test
-      PROSODY_ENABLE_MODULES: recovery_email,smtp_async
+      PROSODY_ENABLE_MODULES: recovery_email,recovery_email_notify,smtp_async
     volumes:
       - .:/opt/xmpp-modules:ro          # this repo, as the plugin path
       - prosody-data:/var/lib/prosody   # test data; wipe with: docker compose down -v
