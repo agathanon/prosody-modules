@@ -1,0 +1,174 @@
+# mod_recovery_email: viewing, setting and removing the address
+
+[Client] Romeo
+	jid: romeo@localhost
+	password: password
+
+---------
+
+Romeo connects
+
+# The command is listed for local users
+
+Romeo sends:
+	<iq type="get" id="list" to="localhost">
+		<query xmlns="http://jabber.org/protocol/disco#items" node="http://jabber.org/protocol/commands"/>
+	</iq>
+
+Romeo receives:
+	<iq type="result" id="list" from="localhost">
+		<query xmlns="http://jabber.org/protocol/disco#items" node="http://jabber.org/protocol/commands">
+			<item jid="localhost" node="recovery-email" name="Recovery email"/>
+		</query>
+	</iq>
+
+# With no address stored, the form is empty
+
+Romeo sends:
+	<iq type="set" id="open1" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute"/>
+	</iq>
+
+Romeo receives:
+	<iq type="result" id="open1" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="executing" scansion:strict="no" sessionid="{scansion:any}">
+			<actions execute="complete"><next/><complete/></actions>
+			<x xmlns="jabber:x:data" type="form">
+				<title>Recovery email</title>
+				<instructions>This address can be used to help you regain access to your account. It is stored privately on the server and is not shown to your contacts.</instructions>
+				<field type="fixed" label="Current address" var="current"><value>No recovery email set</value></field>
+				<field type="text-single" label="Recovery email address" var="email"><value/></field>
+				<field type="boolean" label="Remove my recovery email" var="remove"><value>0</value></field>
+			</x>
+		</command>
+	</iq>
+
+# Set an address; it is trimmed and the domain lowercased
+
+Romeo sends:
+	<iq type="set" id="set1" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>  Romeo@Example.ORG  </value></field>
+			</x>
+		</command>
+	</iq>
+
+Romeo receives:
+	<iq type="result" id="set1" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">Recovery email saved.</note>
+		</command>
+	</iq>
+
+# Reopening shows the stored address; submitting it unchanged in the same
+# session changes nothing
+
+Romeo sends:
+	<iq type="set" id="open2" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute"/>
+	</iq>
+
+Romeo receives:
+	<iq type="result" id="open2" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="executing" scansion:strict="no" sessionid="{scansion:capture:session}">
+			<actions execute="complete"><next/><complete/></actions>
+			<x xmlns="jabber:x:data" type="form">
+				<title>Recovery email</title>
+				<instructions>This address can be used to help you regain access to your account. It is stored privately on the server and is not shown to your contacts.</instructions>
+				<field type="fixed" label="Current address" var="current"><value>Romeo@example.org (unverified)</value></field>
+				<field type="text-single" label="Recovery email address" var="email"><value>Romeo@example.org</value></field>
+				<field type="boolean" label="Remove my recovery email" var="remove"><value>0</value></field>
+			</x>
+		</command>
+	</iq>
+
+Romeo sends:
+	<iq type="set" id="same" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="complete" sessionid="${session}">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>Romeo@EXAMPLE.org</value></field>
+				<field var="remove"><value>0</value></field>
+			</x>
+		</command>
+	</iq>
+
+Romeo receives:
+	<iq type="result" id="same" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="${session}">
+			<note type="info">No changes made.</note>
+		</command>
+	</iq>
+
+# An empty address with "remove" unticked changes nothing
+
+Romeo sends:
+	<iq type="set" id="empty" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value/></field>
+			</x>
+		</command>
+	</iq>
+
+Romeo receives:
+	<iq type="result" id="empty" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">No changes made.</note>
+		</command>
+	</iq>
+
+# Invalid addresses are rejected
+
+Romeo sends:
+	<iq type="set" id="invalid" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>romeo@localhost</value></field>
+			</x>
+		</command>
+	</iq>
+
+Romeo receives:
+	<iq type="result" id="invalid" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="error">The domain part of the address is not valid</note>
+		</command>
+	</iq>
+
+# "Remove" takes precedence over the address field
+
+Romeo sends:
+	<iq type="set" id="remove1" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>other@example.org</value></field>
+				<field var="remove"><value>1</value></field>
+			</x>
+		</command>
+	</iq>
+
+Romeo receives:
+	<iq type="result" id="remove1" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">Recovery email removed.</note>
+		</command>
+	</iq>
+
+Romeo sends:
+	<iq type="set" id="remove2" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="remove"><value>true</value></field>
+			</x>
+		</command>
+	</iq>
+
+Romeo receives:
+	<iq type="result" id="remove2" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">No recovery email was set.</note>
+		</command>
+	</iq>
+
+Romeo disconnects

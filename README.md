@@ -13,8 +13,11 @@ mod_<name>/
   mod_<name>.lua   the module
   README.md        configuration options and a Compatibility section
   spec/            busted unit tests
+  spec/scansion/   scansion integration tests (*.scs)
   docs/PLAN.md     design plan (optional)
 ```
+
+Shared test infrastructure lives in `test/`.
 
 ## Installation
 
@@ -58,3 +61,36 @@ busted mod_<name>/spec
 
 `.luacheckrc` is taken from prosody-modules and declares Prosody's
 module globals.
+
+### Integration tests
+
+Integration tests are [scansion](https://hg.prosody.im/scansion/)
+scripts, as used by Prosody itself. Each script connects one or more
+XMPP clients, sends stanzas and checks the server's replies.
+
+```sh
+test/run-scansion.sh                          # all mod_*/spec/scansion/*.scs
+test/run-scansion.sh mod_<name>/spec/scansion/<script>.scs
+TEST_BACKENDS=sql test/run-scansion.sh        # one storage backend only
+SCANSION_ARGS=-v test/run-scansion.sh         # show all traffic
+```
+
+The script builds a scansion image (`test/scansion/Dockerfile`) and starts
+a throwaway Prosody (`test/docker-compose.yml`, `test/prosody.cfg.lua`),
+separate from the development server. It runs every script once with
+internal (file) storage and once with SQL (SQLite3) storage, and checks
+that Prosody really used that backend.
+
+The test server accepts any password for any user, so scripts don't need
+to create accounts. It has three hosts:
+
+- `localhost`: the modules under test
+- `other.localhost`: users of another host
+- `anon.localhost`: anonymous users (role `prosody:guest`)
+
+All scripts run against the same server, so use different usernames in
+each script.
+
+## License
+
+MIT, the same as Prosody and prosody-modules. See [COPYING](COPYING).

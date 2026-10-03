@@ -1,0 +1,85 @@
+# mod_recovery_email: only registered users of the host can use the command
+
+[Client] Mercutio
+	jid: mercutio@other.localhost
+	password: password
+
+[Client] Anonymous
+	jid: anon.localhost
+
+---------
+
+# A user of another host neither sees nor can execute the command
+
+Mercutio connects
+
+Mercutio sends:
+	<iq type="get" id="list" to="localhost">
+		<query xmlns="http://jabber.org/protocol/disco#items" node="http://jabber.org/protocol/commands"/>
+	</iq>
+
+Mercutio receives:
+	<iq type="result" id="list" from="localhost">
+		<query xmlns="http://jabber.org/protocol/disco#items" node="http://jabber.org/protocol/commands"/>
+	</iq>
+
+Mercutio sends:
+	<iq type="set" id="exec" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>mercutio@example.org</value></field>
+			</x>
+		</command>
+	</iq>
+
+Mercutio receives:
+	<iq type="error" id="exec" from="localhost">
+		<error type="auth">
+			<forbidden xmlns="urn:ietf:params:xml:ns:xmpp-stanzas"/>
+		</error>
+	</iq>
+
+Mercutio disconnects
+
+# An anonymous user (role prosody:guest) can't use it on their own host,
+# where the module is also loaded
+
+Anonymous connects
+
+Anonymous sends:
+	<iq type="get" id="list" to="anon.localhost">
+		<query xmlns="http://jabber.org/protocol/disco#items" node="http://jabber.org/protocol/commands"/>
+	</iq>
+
+Anonymous receives:
+	<iq type="result" id="list" from="anon.localhost">
+		<query xmlns="http://jabber.org/protocol/disco#items" node="http://jabber.org/protocol/commands"/>
+	</iq>
+
+Anonymous sends:
+	<iq type="set" id="exec-own" to="anon.localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute"/>
+	</iq>
+
+Anonymous receives:
+	<iq type="error" id="exec-own" from="anon.localhost">
+		<error type="auth">
+			<forbidden xmlns="urn:ietf:params:xml:ns:xmpp-stanzas"/>
+		</error>
+	</iq>
+
+# ...nor on another host
+
+Anonymous sends:
+	<iq type="set" id="exec-other" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute"/>
+	</iq>
+
+Anonymous receives:
+	<iq type="error" id="exec-other" from="localhost">
+		<error type="auth">
+			<forbidden xmlns="urn:ietf:params:xml:ns:xmpp-stanzas"/>
+		</error>
+	</iq>
+
+Anonymous disconnects

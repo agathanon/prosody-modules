@@ -56,4 +56,6 @@ never a system-installed Prosody.
 - Lint: `luacheck mod_<name>/` (config in `.luacheckrc`, from prosody-modules)
 - Unit tests: `busted mod_<name>/spec`, for pure functions; keep logic
   testable outside Prosody where practical.
+- Integration tests: `test/run-scansion.sh mod_<name>/spec/scansion/*.scs`
+  (scansion scripts, run against internal and SQL storage; see README.md).
 - Reload the module in the container and confirm the log shows no errors.

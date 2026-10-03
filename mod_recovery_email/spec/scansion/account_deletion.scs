@@ -1,0 +1,66 @@
+# mod_recovery_email: the record is removed with the account
+
+[Client] Juliet
+	jid: juliet-deleted@localhost
+	password: password
+
+[Client] Juliet again
+	jid: juliet-deleted@localhost
+	password: password
+
+---------
+
+Juliet connects
+
+Juliet sends:
+	<iq type="set" id="set" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>juliet@example.org</value></field>
+			</x>
+		</command>
+	</iq>
+
+Juliet receives:
+	<iq type="result" id="set" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">Recovery email saved.</note>
+		</command>
+	</iq>
+
+Juliet sends:
+	<iq type="set" id="bye">
+		<query xmlns="jabber:iq:register">
+			<remove/>
+		</query>
+	</iq>
+
+# The server closes the stream with an error after deleting the account,
+# which makes scansion abort, so disconnect first (as Prosody's own
+# tombstones.scs does)
+
+Juliet disconnects
+
+# The test server accepts any login, so the same username can log in again
+
+Juliet again connects
+
+Juliet again sends:
+	<iq type="set" id="open" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute"/>
+	</iq>
+
+Juliet again receives:
+	<iq type="result" id="open" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="executing" scansion:strict="no">
+			<x xmlns="jabber:x:data" type="form">
+				<title>Recovery email</title>
+				<instructions>This address can be used to help you regain access to your account. It is stored privately on the server and is not shown to your contacts.</instructions>
+				<field type="fixed" label="Current address" var="current"><value>No recovery email set</value></field>
+				<field type="text-single" label="Recovery email address" var="email"><value/></field>
+				<field type="boolean" label="Remove my recovery email" var="remove"><value>0</value></field>
+			</x>
+		</command>
+	</iq>
+
+Juliet again disconnects
