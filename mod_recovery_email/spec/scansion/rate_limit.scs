@@ -1,0 +1,109 @@
+# mod_recovery_email: at most 5 changes in a burst
+
+[Client] Tybalt
+	jid: tybalt@localhost
+	password: password
+
+---------
+
+Tybalt connects
+
+Tybalt sends:
+	<iq type="set" id="change1" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>tybalt1@example.org</value></field>
+			</x>
+		</command>
+	</iq>
+
+Tybalt receives:
+	<iq type="result" id="change1" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">Recovery email saved.</note>
+		</command>
+	</iq>
+
+Tybalt sends:
+	<iq type="set" id="change2" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>tybalt2@example.org</value></field>
+			</x>
+		</command>
+	</iq>
+
+Tybalt receives:
+	<iq type="result" id="change2" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">Recovery email saved.</note>
+		</command>
+	</iq>
+
+Tybalt sends:
+	<iq type="set" id="change3" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>tybalt3@example.org</value></field>
+			</x>
+		</command>
+	</iq>
+
+Tybalt receives:
+	<iq type="result" id="change3" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">Recovery email saved.</note>
+		</command>
+	</iq>
+
+Tybalt sends:
+	<iq type="set" id="change4" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>tybalt4@example.org</value></field>
+			</x>
+		</command>
+	</iq>
+
+Tybalt receives:
+	<iq type="result" id="change4" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">Recovery email saved.</note>
+		</command>
+	</iq>
+
+Tybalt sends:
+	<iq type="set" id="change5" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>tybalt5@example.org</value></field>
+			</x>
+		</command>
+	</iq>
+
+Tybalt receives:
+	<iq type="result" id="change5" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">Recovery email saved.</note>
+		</command>
+	</iq>
+
+# The sixth change is refused
+
+Tybalt sends:
+	<iq type="set" id="change6" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>tybalt6@example.org</value></field>
+			</x>
+		</command>
+	</iq>
+
+Tybalt receives:
+	<iq type="result" id="change6" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="error">Too many changes. Please try again later.</note>
+		</command>
+	</iq>
+
+Tybalt disconnects
