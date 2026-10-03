@@ -292,6 +292,7 @@ module:add_item("shell-command", {
 	handler = function (self, user_jid)
 		local username, jid_err = shell_username(user_jid);
 		if not username then return nil, jid_err; end
+		if not usermanager.user_exists(username, module.host) then return nil, "No such account"; end
 		local record, err = get(username);
 		if err then return nil, "Unable to read record: "..tostring(err); end
 		if not record then return true, "No recovery email set"; end

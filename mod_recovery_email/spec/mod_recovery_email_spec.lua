@@ -341,6 +341,7 @@ describe("mod_recovery_email", function ()
 			assert.is_nil((run("set", "alice@localhost", "nope")));
 			assert.is_nil((run("set", "bob@localhost", "b@example.org")));
 			assert.is_nil((run("show", "localhost")));
+			assert.same({ nil, "No such account" }, { run("show", "bob@localhost") });
 		end);
 	end);
 end);
