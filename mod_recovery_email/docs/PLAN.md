@@ -78,8 +78,8 @@ Expose the module's functions so later modules can call them via `module:depends
 | Function | Returns | Behavior |
 | --- | --- | --- |
 | `get(username)` | record table or `nil` | Reads the user's record; returns `nil` (and deletes the record) if it belongs to an earlier account (see storage rules) |
-| `set(username, email)` | `true, "changed"` or `true, "unchanged"`, or `nil, error_code, message` | Fails if the account doesn't exist (`usermanager.user_exists()`). Validates and normalizes, writes the record per the storage rules, fires `recovery-email-set` only when the result is `"changed"` |
-| `clear(username)` | `true, "removed"` or `true, "absent"` | Deletes the record and fires `recovery-email-cleared` only when the result is `"removed"` |
+| `set(username, email, source)` | `true, "changed"` or `true, "unchanged"`, or `nil, error_code, message` | Fails if the account doesn't exist (`usermanager.user_exists()`). Validates and normalizes, writes the record per the storage rules, fires `recovery-email-set` only when the result is `"changed"` |
+| `clear(username, source)` | `true, "removed"` or `true, "absent"` | Deletes the record and fires `recovery-email-cleared` only when the result is `"removed"` |
 | `validate(email)` | normalized email or `nil, message` | Pure function with no storage access, so it can be unit tested in isolation |
 
 Events, fired on the host with `module:fire_event()`:
@@ -144,15 +144,15 @@ The record must disappear with the account, and admins need shell access for sup
 
 **Registration:** also hook `user-registered` (same host filter) and delete any leftover record for that username. Together with the `account_created` check this covers records left behind when the module wasn't loaded at deletion time.
 
-**Logging:** log set and clear operations at `info` level with the username and a masked address (for example `j***@example.org`). Never log a full address.
+**Logging:** log set and clear operations at `info` level with the username and a masked address (for example `j***@example.org`). Never log a full address. Changes made through the admin shell pass `source = "shell"` to `set()`/`clear()` and are marked "(via shell)" in the log line.
 
 **Admin shell commands**, registered through Prosody 13's shell-command mechanism and available in `prosodyctl shell`:
 
 | Command | Behavior |
 | --- | --- |
-| `recovery_email show <jid>` | Prints the record: email, status, and timestamps |
-| `recovery_email set <jid> <email>` | Calls `set()`; the result is `unverified` like any other change |
-| `recovery_email clear <jid>` | Calls `clear()` |
+| `recovery show <jid>` | Prints the record: email, status, and timestamps |
+| `recovery set <jid> <email>` | Calls `set()`; the result is `unverified` like any other change |
+| `recovery clear <jid>` | Calls `clear()` |
 
 Shell commands must go through the internal API so validation, logging, and events apply. Register them with `module:add_item("shell-command", ...)` and `host_selector = "jid"` (see `mod_roster.lua`) so each call reaches the module instance for the JID's host. `set` fails for a JID with no account (enforced by `set()`). It's allowed for disabled accounts, so admins can fix a record before restoring an account. The shell isn't rate limited.
 

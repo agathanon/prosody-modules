@@ -58,16 +58,17 @@ Administration
 Admins can manage records with `prosodyctl shell`:
 
 ```sh
-prosodyctl shell recovery_email show user@example.com
-prosodyctl shell recovery_email set user@example.com someone@example.org
-prosodyctl shell recovery_email clear user@example.com
+prosodyctl shell recovery show user@example.com
+prosodyctl shell recovery set user@example.com someone@example.org
+prosodyctl shell recovery clear user@example.com
 ```
 
-Inside an interactive shell, use `recovery_email:show("user@example.com")`
+Inside an interactive shell, use `recovery:show("user@example.com")`
 and so on.
 
 Addresses set from the shell are validated and stored as `unverified`,
-like any other change. The shell is not rate limited.
+like any other change. The shell is not rate limited, and changes made
+from it are marked "(via shell)" in the log.
 
 Server logs only ever show masked addresses (e.g. `s***@example.org`).
 
@@ -77,12 +78,16 @@ API
 Other modules can use `module:depends("recovery_email")` to access these
 functions. All of them take the local username on the current host.
 
-  Function                 Returns
-  ------------------------ ---------------------------------------------------------------
-  `get(username)`          The record table, or `nil`
-  `set(username, email)`   `true, "changed"` or `true, "unchanged"`; `nil, code, message` on error
-  `clear(username)`        `true, "removed"` or `true, "absent"`; `nil, code, message` on error
-  `validate(email)`        The normalized address, or `nil, message`
+  Function                         Returns
+  -------------------------------- ---------------------------------------------------------------
+  `get(username)`                  The record table, or `nil`
+  `set(username, email, source)`   `true, "changed"` or `true, "unchanged"`; `nil, code, message` on error
+  `clear(username, source)`        `true, "removed"` or `true, "absent"`; `nil, code, message` on error
+  `validate(email)`                The normalized address, or `nil, message`
+
+`source` is optional: a short label such as `"shell"` that is added to
+the log line for the change, e.g. "(via shell)". Changes made by users
+through the ad-hoc command have none.
 
 A record has the fields `version`, `email`, `status` (`"unverified"` or
 `"verified"`), `created_at`, `updated_at` and `account_created`. The
@@ -111,7 +116,7 @@ Limitations
     outside Prosody, for example directly in LDAP, Prosody never learns
     of the deletion, so the record remains and applies to any new
     account created with that username. Clear such records with
-    `prosodyctl shell recovery_email clear` when removing accounts.
+    `prosodyctl shell recovery clear` when removing accounts.
 -   **Deletion relies on Prosody's cleanup.** When an account is
     deleted, Prosody removes all of the user's stored data, and this
     module also removes its record. If the module is not loaded at that

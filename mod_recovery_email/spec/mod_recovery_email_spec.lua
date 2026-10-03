@@ -14,7 +14,7 @@ end
 local function load_module()
 	local store = new_store();
 	local accounts = { alice = { created = 1000 } };
-	local events, hooks, items = {}, {}, {};
+	local events, hooks, items, logs = {}, {}, {}, {};
 	local throttle_state = { allow = true, polls = 0 };
 
 	local stubs = {
@@ -55,7 +55,7 @@ local function load_module()
 	local module = {
 		host = "localhost";
 		name = "recovery_email";
-		log = function () end;
+		log = function (_, level, fmt, ...) logs[#logs+1] = level..": "..fmt:format(...); end;
 		open_store = function () return store; end;
 		require = function () return { new = function (...) return { ... }; end }; end;
 		fire_event = function (_, name, payload) events[#events+1] = { name = name, payload = payload }; end;
@@ -74,7 +74,7 @@ local function load_module()
 
 	return env, {
 		store = store, accounts = accounts, events = events, hooks = hooks,
-		items = items, throttle = throttle_state,
+		items = items, throttle = throttle_state, logs = logs,
 	};
 end
 
@@ -292,6 +292,7 @@ describe("mod_recovery_email", function ()
 		it("saves a new address", function ()
 			assert.equal("Recovery email saved.", submit({ email = "a@example.org" }).info);
 			assert.equal(1, s.throttle.polls);
+			assert.same({ "info: Recovery email for alice set to a***@example.org" }, s.logs);
 		end);
 
 		it("reports unchanged and empty submissions without using the limit", function ()
@@ -335,6 +336,21 @@ describe("mod_recovery_email", function ()
 			assert.equal("Email:       a@example.org", printed[1]);
 			assert.same({ true, "Recovery email removed" }, { run("clear", "alice@localhost") });
 			assert.equal(2, #s.events);
+		end);
+
+		it("are in a section whose name works with 'help'", function ()
+			for _, name in ipairs({ "show", "set", "clear" }) do
+				assert.equal("recovery", s.items["shell-command:"..name].section);
+			end
+		end);
+
+		it("marks changes made from the shell in the log", function ()
+			run("set", "alice@localhost", "alice@example.org");
+			run("clear", "alice@localhost");
+			assert.same({
+				"info: Recovery email for alice set to a***@example.org (via shell)",
+				"info: Recovery email for alice (a***@example.org) removed (via shell)",
+			}, s.logs);
 		end);
 
 		it("validates input", function ()

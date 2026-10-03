@@ -88,8 +88,13 @@ function get(username) --luacheck: ignore 131/get
 	return record;
 end
 
+-- Optional source (e.g. "shell") is noted in the log
+local function via(source)
+	return source and " (via "..source..")" or "";
+end
+
 -- Returns true and "changed"/"unchanged", or nil, error_code, message
-function set(username, email) --luacheck: ignore 131/set
+function set(username, email, source) --luacheck: ignore 131/set
 	if not usermanager.user_exists(username, module.host) then
 		return nil, "item-not-found", "No such account";
 	end
@@ -120,7 +125,7 @@ function set(username, email) --luacheck: ignore 131/set
 		return nil, "internal-server-error", "Unable to store the address";
 	end
 
-	module:log("info", "Recovery email for %s set to %s", username, mask(normalized));
+	module:log("info", "Recovery email for %s set to %s%s", username, mask(normalized), via(source));
 	module:fire_event("recovery-email-set", {
 		username = username;
 		host = module.host;
@@ -131,7 +136,7 @@ function set(username, email) --luacheck: ignore 131/set
 end
 
 -- Returns true and "removed"/"absent", or nil, error_code, message
-function clear(username) --luacheck: ignore 131/clear
+function clear(username, source) --luacheck: ignore 131/clear
 	local record, get_err = get(username);
 	if get_err then
 		module:log("error", "Unable to read recovery email for %s: %s", username, get_err);
@@ -145,7 +150,7 @@ function clear(username) --luacheck: ignore 131/clear
 		module:log("error", "Unable to remove recovery email for %s: %s", username, set_err);
 		return nil, "internal-server-error", "Unable to remove the address";
 	end
-	module:log("info", "Recovery email for %s (%s) removed", username, mask(record.email));
+	module:log("info", "Recovery email for %s (%s) removed%s", username, mask(record.email), via(source));
 	module:fire_event("recovery-email-cleared", {
 		username = username;
 		host = module.host;
@@ -283,7 +288,7 @@ local function shell_username(user_jid)
 end
 
 module:add_item("shell-command", {
-	section = "recovery_email";
+	section = "recovery";
 	section_desc = "View and manage users' recovery email addresses";
 	name = "show";
 	desc = "Show a user's recovery email record";
@@ -308,7 +313,7 @@ module:add_item("shell-command", {
 });
 
 module:add_item("shell-command", {
-	section = "recovery_email";
+	section = "recovery";
 	section_desc = "View and manage users' recovery email addresses";
 	name = "set";
 	desc = "Set a user's recovery email (stored as unverified)";
@@ -317,14 +322,14 @@ module:add_item("shell-command", {
 	handler = function (self, user_jid, email) --luacheck: ignore 212/self
 		local username, jid_err = shell_username(user_jid);
 		if not username then return nil, jid_err; end
-		local ok, result, message = set(username, email);
+		local ok, result, message = set(username, email, "shell");
 		if not ok then return nil, message; end
 		return true, result == "unchanged" and "No changes made" or "Recovery email set";
 	end;
 });
 
 module:add_item("shell-command", {
-	section = "recovery_email";
+	section = "recovery";
 	section_desc = "View and manage users' recovery email addresses";
 	name = "clear";
 	desc = "Remove a user's recovery email";
@@ -333,7 +338,7 @@ module:add_item("shell-command", {
 	handler = function (self, user_jid) --luacheck: ignore 212/self
 		local username, jid_err = shell_username(user_jid);
 		if not username then return nil, jid_err; end
-		local ok, result, message = clear(username);
+		local ok, result, message = clear(username, "shell");
 		if not ok then return nil, message; end
 		return true, result == "absent" and "No recovery email was set" or "Recovery email removed";
 	end;
