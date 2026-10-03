@@ -58,4 +58,5 @@ never a system-installed Prosody.
   testable outside Prosody where practical.
 - Integration tests: `test/run-scansion.sh mod_<name>/spec/scansion/*.scs`
   (scansion scripts, run against internal and SQL storage; see README.md).
+  For modules that send email: `test/run-smtp.sh` (real SMTP to Mailpit).
 - Reload the module in the container and confirm the log shows no errors.
