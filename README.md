@@ -58,3 +58,7 @@ busted mod_<name>/spec
 
 `.luacheckrc` is taken from prosody-modules and declares Prosody's
 module globals.
+
+## License
+
+MIT, the same as Prosody and prosody-modules. See [COPYING](COPYING).
