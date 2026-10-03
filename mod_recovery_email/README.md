@@ -100,6 +100,36 @@ The module fires these events on the host:
 Neither event fires when a record is removed because the account was
 deleted.
 
+Limitations
+===========
+
+-   **Authentication backends without account metadata.** Records are
+    tied to an account through the account's creation time, which only
+    some authentication backends report (`internal_hashed` does). With
+    others, such as LDAP, a record can't be told apart from one left by
+    an earlier account with the same username. If accounts are deleted
+    outside Prosody, for example directly in LDAP, Prosody never learns
+    of the deletion, so the record remains and applies to any new
+    account created with that username. Clear such records with
+    `prosodyctl shell recovery_email clear` when removing accounts.
+-   **Deletion relies on Prosody's cleanup.** When an account is
+    deleted, Prosody removes all of the user's stored data, and this
+    module also removes its record. If the module is not loaded at that
+    moment and the storage backend can't remove all user data, the
+    record is left behind; the creation-time check above then hides it
+    from a new account where the backend supports that.
+-   **Rate limits are kept in memory.** They reset when the module is
+    reloaded or Prosody restarts, and are kept for up to 1024 users at a
+    time; beyond that, the oldest entries are dropped and those users'
+    limits reset.
+-   **Address validation is basic.** It checks the form of the address
+    only: it does not check that the domain exists or accepts email,
+    does not support quoted local parts (`"john doe"@example.org`), and
+    does not convert internationalized domain names, so `ü.example` and
+    `xn--tda.example` count as different addresses.
+-   **Addresses are not verified.** Every address is stored as
+    `unverified`; nothing confirms that the user controls it.
+
 Compatibility
 =============
 
@@ -107,3 +137,6 @@ Compatibility
   ----------------- ---------------------------------------------
   13.0              Works
   0.12              Does not work (requires the roles framework)
+
+Tested with Prosody's internal (file) storage and SQL storage
+(SQLite3).
