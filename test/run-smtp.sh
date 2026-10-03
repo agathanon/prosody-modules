@@ -80,6 +80,66 @@ check "untrusted certificate is refused" \
 
 check "invalid message is rejected" "$(send localhost 'not-an-address' 'x')" "error: invalid recipient address"
 
+# mod_recovery_email_notify, end to end: codes and notices arrive by email
+
+# mail_ids ADDRESS: IDs of messages Mailpit (STARTTLS) received for ADDRESS
+mail_ids() {
+	compose exec -T mailpit wget -qO- "http://localhost:8025/api/v1/search?query=to:$1" \
+		| grep -o '"ID":"[^"]*"' | cut -d'"' -f4
+}
+
+# mail_text ID: the decoded plain-text body of a message
+mail_text() {
+	compose exec -T mailpit wget -qO- "http://localhost:8025/api/v1/message/$1" \
+		| grep -o '"Text":"[^"]*"'
+}
+
+# wait_for_mail ADDRESS COUNT: wait until ADDRESS has COUNT messages
+wait_for_mail() {
+	i=0
+	while [ "$i" -lt 20 ] && [ "$(mail_ids "$1" | wc -l)" -lt "$2" ]; do
+		i=$((i + 1))
+		sleep 0.5
+	done
+}
+
+# code_for ADDRESS: the code in the most recent verification email to ADDRESS
+code_for() {
+	for id in $(mail_ids "$1"); do
+		mail_text "$id" | grep -o 'code is: [0-9]\{6\}' | cut -d' ' -f3 && return
+	done
+}
+
+verify() {
+	shell "> return tostring((require'prosody.core.modulemanager'.get_module('localhost', 'recovery_email').verify('notify', '$1')))"
+}
+
+shell "recovery:set('notify@localhost', 'notify-one@example.org')" >/dev/null
+wait_for_mail notify-one@example.org 1
+code=$(code_for notify-one@example.org)
+check "verification email carries a working code" "$(verify "$code")" "true"
+
+shell "recovery:set('notify@localhost', 'notify-two@example.org')" >/dev/null
+wait_for_mail notify-one@example.org 2
+check "replacing a verified address notifies it" "$(mail_ids notify-one@example.org | wc -l | tr -d ' ')" "2"
+notice=$(mail_text "$(mail_ids notify-one@example.org | head -n 1)")
+check_contains "notice says an administrator made the change" "$notice" "by a server administrator"
+check_contains "notice names the admin contact fallback" "$notice" "Contact the administrator of localhost."
+
+wait_for_mail notify-two@example.org 1
+check "new address gets its own code" "$(verify "$(code_for notify-two@example.org)")" "true"
+shell "recovery:clear('notify@localhost')" >/dev/null
+wait_for_mail notify-two@example.org 2
+notice=$(mail_text "$(mail_ids notify-two@example.org | head -n 1)")
+check_contains "removing a verified address notifies it" "$notice" "was removed"
+
+if compose logs prosody 2>&1 | grep -E "recovery_email" | grep -qE "$code|notify-one@|notify-two@"; then
+	echo "FAIL  logs contain a verification code or a full address"
+	failures=$((failures + 1))
+else
+	echo "pass  logs contain no verification codes or full addresses"
+fi
+
 if compose logs prosody 2>&1 | grep -E "smtp_async" | grep -qE "alice@|bob@|carol@|dave@|secret|Second line"; then
 	echo "FAIL  logs contain a full address, the password or message content"
 	failures=$((failures + 1))

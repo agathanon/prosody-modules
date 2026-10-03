@@ -37,7 +37,7 @@ smtp_async_timeout = "5s"
 
 -- Modules under test. mod_smtp_async here uses STARTTLS.
 VirtualHost "localhost"
-	modules_enabled = { "recovery_email", "smtp_async", "test_recovery_codes" }
+	modules_enabled = { "recovery_email", "recovery_email_notify", "smtp_async", "test_recovery_codes" }
 	smtp_async_server = "mailpit"
 	-- Users whose verification codes are sent to them over XMPP
 	test_recovery_codes_users = { "verifier", "guesser" }
