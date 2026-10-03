@@ -481,8 +481,11 @@ local function attempt(job)
 		end
 		session:connected(tls_mode == "tls");
 	end
-	function listeners.onincoming(_, data)
-		session:receive(data);
+	-- Reading line by line (pattern "*l" below), a complete line arrives
+	-- without its line ending and with no error; a partial line arrives
+	-- with an error such as "timeout"
+	function listeners.onincoming(_, data, err)
+		session:receive(err and data or data.."\n");
 	end
 	function listeners.onstatus(c, status)
 		if status == "ssl-handshake-complete" and session.state == "tls-handshake" then
@@ -499,8 +502,12 @@ local function attempt(job)
 	end
 
 	module:log("debug", "Connecting to %s port %d for email %s", server, port, job.id);
+	-- Read line by line: Prosody 13.0's net.server_epoll closes a new
+	-- connection if its first read returns only part of the data available
+	-- before the connection is marked as connected, which happens when a
+	-- fast server's greeting arrives first. A complete line avoids that.
 	connect(basic_resolver.new(server, port, "tcp", { servername = server }), listeners,
-		{ sslctx = tls_mode == "tls" and tls_ctx or nil });
+		{ sslctx = tls_mode == "tls" and tls_ctx or nil; pattern = "*l" });
 end
 
 function pump()

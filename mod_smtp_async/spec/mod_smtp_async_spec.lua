@@ -362,8 +362,9 @@ describe("mod_smtp_async", function ()
 			};
 			local l = connection.listeners;
 			l.onconnect(conn);
+			-- Line mode: complete lines arrive without their line ending
 			for _, reply in ipairs({ "220 hi", "250 mail", "250 OK", "250 OK", "354 go", "250 queued" }) do
-				l.onincoming(conn, reply.."\r\n");
+				l.onincoming(conn, reply);
 			end
 			return writes;
 		end
@@ -373,9 +374,24 @@ describe("mod_smtp_async", function ()
 			local p = env.send(message);
 			assert.equal(1, #s.connects);
 			assert.same({ host = "mail.example.net"; port = 25 }, s.connects[1].resolver);
+			-- line by line, to avoid Prosody 13.0 closing connections whose
+			-- server speaks first
+			assert.equal("*l", s.connects[1].options.pattern);
 			deliver(s.connects[1]);
 			assert.equal("resolved", p.state);
 			assert.truthy(s.logs[#s.logs]:find("Sent email MSGID to u***@example.org", 1, true));
+		end);
+
+		it("joins lines that arrive in parts", function ()
+			env, s = load_module({ smtp_async_tls = "none" });
+			local writes = {};
+			local conn = { write = function (_, data) writes[#writes+1] = data; end; close = function () end };
+			env.send(message);
+			local l = s.connects[1].listeners;
+			l.onconnect(conn);
+			l.onincoming(conn, "22", "timeout"); -- partial line
+			l.onincoming(conn, "0 mail.example.org ESMTP"); -- rest of the line
+			assert.same({ "EHLO example.com\r\n" }, writes);
 		end);
 
 		it("rejects invalid messages without connecting", function ()
