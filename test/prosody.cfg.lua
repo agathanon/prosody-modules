@@ -2,7 +2,7 @@
 -- any password is accepted and connections are unencrypted.
 --luacheck: ignore
 
-plugin_paths = { "/opt/xmpp-modules" }
+plugin_paths = { "/opt/xmpp-modules", "/opt/xmpp-modules/test/plugins" }
 
 modules_enabled = {
 	"roster";
@@ -37,8 +37,10 @@ smtp_async_timeout = "5s"
 
 -- Modules under test. mod_smtp_async here uses STARTTLS.
 VirtualHost "localhost"
-	modules_enabled = { "recovery_email", "smtp_async" }
+	modules_enabled = { "recovery_email", "smtp_async", "test_recovery_codes" }
 	smtp_async_server = "mailpit"
+	-- Users whose verification codes are sent to them over XMPP
+	test_recovery_codes_users = { "verifier", "guesser" }
 
 -- Users of another host on the same server. mod_smtp_async here uses
 -- implicit TLS.

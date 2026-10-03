@@ -1,0 +1,134 @@
+# mod_recovery_email: a code is cancelled after 5 wrong attempts
+#
+# Codes arrive as XMPP messages from the test server's mod_test_recovery_codes.
+
+[Client] Guesser
+	jid: guesser@localhost
+	password: password
+
+---------
+
+Guesser connects
+
+Guesser sends:
+	<iq type="set" id="set" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>guesser@example.org</value></field>
+			</x>
+		</command>
+	</iq>
+
+Guesser receives:
+	<message from="localhost">
+		<code xmlns="urn:test:recovery-code" value="{scansion:capture:code}"/>
+	</message>
+
+Guesser receives:
+	<iq type="result" id="set" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">Recovery email saved. A verification code has been sent to it.</note>
+		</command>
+	</iq>
+
+Guesser sends:
+	<iq type="set" id="guess1" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="code"><value>wrong</value></field>
+			</x>
+		</command>
+	</iq>
+
+Guesser receives:
+	<iq type="result" id="guess1" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="error">That code is incorrect. 4 attempts left.</note>
+		</command>
+	</iq>
+
+Guesser sends:
+	<iq type="set" id="guess2" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="code"><value>wrong</value></field>
+			</x>
+		</command>
+	</iq>
+
+Guesser receives:
+	<iq type="result" id="guess2" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="error">That code is incorrect. 3 attempts left.</note>
+		</command>
+	</iq>
+
+Guesser sends:
+	<iq type="set" id="guess3" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="code"><value>wrong</value></field>
+			</x>
+		</command>
+	</iq>
+
+Guesser receives:
+	<iq type="result" id="guess3" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="error">That code is incorrect. 2 attempts left.</note>
+		</command>
+	</iq>
+
+Guesser sends:
+	<iq type="set" id="guess4" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="code"><value>wrong</value></field>
+			</x>
+		</command>
+	</iq>
+
+Guesser receives:
+	<iq type="result" id="guess4" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="error">That code is incorrect. 1 attempt left.</note>
+		</command>
+	</iq>
+
+# The fifth wrong attempt cancels the code
+
+Guesser sends:
+	<iq type="set" id="guess5" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="code"><value>wrong</value></field>
+			</x>
+		</command>
+	</iq>
+
+Guesser receives:
+	<iq type="result" id="guess5" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="error">That code is no longer valid. Tick "Send a new code" to get another.</note>
+		</command>
+	</iq>
+
+# After that, even the right code is refused
+
+Guesser sends:
+	<iq type="set" id="right" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="code"><value>${code}</value></field>
+			</x>
+		</command>
+	</iq>
+
+Guesser receives:
+	<iq type="result" id="right" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="error">That code is no longer valid. Tick "Send a new code" to get another.</note>
+		</command>
+	</iq>
+
+Guesser disconnects
