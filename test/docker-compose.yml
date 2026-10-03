@@ -1,0 +1,26 @@
+# Integration test environment: a throwaway Prosody and scansion.
+# Run via test/run-scansion.sh rather than directly.
+services:
+  prosody:
+    image: prosodyim/prosody:13.0
+    environment:
+      TEST_STORAGE: ${TEST_STORAGE:-internal}
+      TEST_LOGLEVEL: ${TEST_LOGLEVEL:-info}
+    volumes:
+      - ..:/opt/xmpp-modules:ro
+      - ./prosody.cfg.lua:/etc/prosody/prosody.cfg.lua:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/5222"]
+      interval: 1s
+      retries: 30
+
+  scansion:
+    build: ./scansion
+    image: prosody-modules-scansion
+    profiles: ["test"]
+    volumes:
+      - ..:/work:ro
+    working_dir: /work
+    depends_on:
+      prosody:
+        condition: service_healthy
