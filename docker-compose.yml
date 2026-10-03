@@ -1,0 +1,20 @@
+# Local Prosody 13.0 instance for developing and testing modules.
+# Usage: docker compose up -d   |   Logs: docker compose logs -f prosody
+services:
+  prosody:
+    image: prosodyim/prosody:13.0
+    environment:
+      PROSODY_VIRTUAL_HOSTS: localhost
+      PROSODY_ADMINS: admin@localhost
+      PROSODY_LOGLEVEL: debug
+      PROSODY_PLUGIN_PATHS: /opt/xmpp-modules
+      # Comma-separated list of modules under test
+      PROSODY_ENABLE_MODULES: recovery_email
+    volumes:
+      - .:/opt/xmpp-modules:ro          # this repo, as the plugin path
+      - prosody-data:/var/lib/prosody   # test data; wipe with: docker compose down -v
+    ports:
+      - "127.0.0.1:5222:5222"           # local clients only (e.g. Gajim)
+
+volumes:
+  prosody-data:

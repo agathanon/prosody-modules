@@ -1,0 +1,21 @@
+# Read-only upstream checkouts used as reference (see README.md)
+reference/
+
+# Tooling output
+.luacheckcache
+luacov.stats.out
+luacov.report.out
+
+# Local dev environment overrides
+docker-compose.override.yml
+.env
+
+# Claude Code per-user settings
+.claude/settings.local.json
+
+# Editors and OS
+*.swp
+*~
+.vscode/
+.idea/
+.DS_Store
