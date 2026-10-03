@@ -209,3 +209,135 @@ Read the Prosody 13 sources below before writing code; they are the authority wh
 - [XEP-0050: Ad-Hoc Commands](https://xmpp.org/extensions/xep-0050.html) and XEP-0004: Data Forms.
 - The prosody-modules repository, for README and Compatibility section conventions.
 
+
+---
+
+# Phase 2: address verification
+
+Oct 3, 2026
+
+## Overview and scope
+
+Phase 2 lets users prove they control their recovery address, and sends the emails that this and earlier changes call for. The work is split across three modules:
+
+| Module | Role in phase 2 |
+| --- | --- |
+| `mod_recovery_email` (this module) | Owns the record and all verification state: generates and checks codes, sets `status = "verified"`, fires events. Sends nothing itself. |
+| `mod_recovery_email_notify` (new) | Listens to this module's events and writes the three emails. See `mod_recovery_email_notify/docs/PLAN.md`. |
+| `mod_smtp_async` (new) | Generic, non-blocking SMTP sender used by the notifier. See `mod_smtp_async/docs/PLAN.md`. |
+
+**Decisions made in planning:**
+
+- Users verify with a **6-digit code** sent by email and entered in the existing "Recovery email" ad-hoc command. There is no confirmation link and no web endpoint in phase 2.
+- Changing or removing the address does **not** require the current password. Instead, the previous address is notified, if it was verified.
+- Three emails are sent: the verification code to a newly set address, a notice to the previous verified address when it is replaced, and a notice to it when it is removed.
+
+**Out of scope:**
+
+- Confirmation links and any HTTP endpoint (phase 3 adds one for the reset request page and may add links then).
+- Re-authentication on change.
+- Emails on account deletion.
+- An admin command to mark an address verified without a code.
+
+## Verification design
+
+**Codes:**
+
+- 6 decimal digits, generated with `util.random` using rejection sampling so every code is equally likely.
+- Valid for 24 hours by default, configurable with `recovery_email_code_lifetime` (read with `module:get_option_period()`, e.g. `"1h"`). At most 5 incorrect attempts per code; after the fifth, the code is cancelled and the user must request a new one. An attacker's chance of guessing a code is therefore 5 in 1,000,000.
+- Stored only as a salted SHA-256 hash (`util.hashes`), compared in constant time with `util.hashes.equals`. A 6-digit code can't be protected against someone who can read the storage, so the hash's purpose is to keep codes out of backups, shell output and logs; the short lifetime and attempt limit are the real protection.
+- Input is normalized before checking: spaces and hyphens are removed, so `123 456` and `123-456` are accepted.
+
+**Record fields** (the reserved phase 1 fields, plus one new field; old records stay valid, so `version` stays `1`):
+
+| Field | Type | Purpose |
+| --- | --- | --- |
+| `verify_token_hash` | string or nil | `salt$hash` of the pending code |
+| `verify_expires` | number or nil | Unix time the pending code expires |
+| `verify_attempts` | number or nil | Incorrect attempts against the pending code (new) |
+| `verified_at` | number or nil | Unix time the address was verified |
+
+**Rules:**
+
+- Saving a different address (through `set()`, from any source) stores it as `unverified`, generates a code, and requests a verification email, all in the same write. This replaces the phase 1 behavior where `set()` only stored the address.
+- A new code always replaces the pending one.
+- A correct code sets `status = "verified"` and `verified_at`, and clears the three `verify_*` fields.
+- An expired code, or one that has used up its attempts, is cleared when next checked; the user is told to request a new code.
+- Only an `unverified` address can be verified or have a new code sent. Re-saving the same verified address changes nothing, as in phase 1.
+
+## API changes
+
+New functions, exposed like the phase 1 API:
+
+| Function | Returns | Behavior |
+| --- | --- | --- |
+| `verify(username, code)` | `true, "verified"`, or `nil, error_code, message` | Checks the code. Error codes: `item-not-found` (no record), `conflict` (already verified), `not-acceptable` (wrong code; the message says how many attempts remain), `resource-constraint` (attempts used up or code expired; code cleared) |
+| `resend_verification(username, source)` | `true`, or `nil, error_code, message` | Generates a new code for an `unverified` record and requests a verification email |
+
+`set()` keeps its signature and return values; when it returns `"changed"`, a verification email has also been requested.
+
+**Event changes:**
+
+| Event | Payload | Change |
+| --- | --- | --- |
+| `recovery-email-set` | `{ username, host, email, previous_email, previous_status, source }` | Adds `previous_status` and `source` |
+| `recovery-email-cleared` | `{ username, host, previous_email, previous_status, source }` | Adds `previous_status` and `source` |
+| `recovery-email-verification-requested` (new) | `{ username, host, email, code, expires }` | Fired after a code is stored. Carries the raw code, so listeners must never log or store the payload |
+| `recovery-email-verified` (new) | `{ username, host, email }` | Fired when a code is accepted |
+
+`source` is the same optional label as in phase 1 (`"shell"` for admin changes, `nil` for users), so the notifier can say who made a change.
+
+## Ad-hoc command changes
+
+The form is built per request from the record's state, instead of from one fixed layout, so users only see fields that apply. This means replacing `util.adhoc.new_initial_data_form` with a small handler of our own.
+
+| State | Extra fields shown |
+| --- | --- |
+| No address | None (as in phase 1) |
+| Unverified | `code` (text-single, "Verification code") and `resend` (boolean, "Send a new code") |
+| Verified | None; the current address shows "(verified)" |
+
+**Submission order:** `remove` wins; otherwise a changed `email` is saved (any code entered is ignored, since a new one is sent); otherwise a non-empty `code` is checked; otherwise `resend` sends a new code; otherwise nothing changes.
+
+**New outcomes:**
+
+| Submission | Note shown to user |
+| --- | --- |
+| New valid address | "Recovery email saved. A verification code has been sent to it." |
+| Correct code | "Recovery email verified." |
+| Wrong code | "That code is incorrect. N attempts left." |
+| Code expired or attempts used up | "That code is no longer valid. Tick "Send a new code" to get another." |
+| `resend` ticked | "A new code has been sent." |
+| Resend limit reached | "Too many codes requested. Please try again later." |
+
+**Rate limits:**
+
+- The phase 1 limit on changes (5 in a burst, refilling at 5 per hour) is unchanged. Verifying does not count as a change.
+- Resending has its own limit: 3 in a burst, refilling at 3 per hour, using `util.throttle` the same way. A new address's first code is covered by the change limit, not this one.
+- Code attempts are limited per code (5), in storage, so they survive restarts.
+
+## Shell changes
+
+- `recovery show` also prints whether a code is pending and when it expires, and the attempts used. It never prints the code or its hash.
+- `recovery set` from the shell starts verification like any other change: the user receives a code and enters it in the ad-hoc command.
+
+## Security notes
+
+- The raw code exists only in memory: in the event payload and in the email. It is never logged or stored.
+- Notifications go only to addresses that were verified, so the module can't be used to send email to an arbitrary address beyond the single verification message for the address the user enters, which the change rate limit bounds.
+- **Remaining gap:** without re-authentication, someone with brief access to a logged-in session can set and verify their own address. The previous verified address is warned, but if the owner misses the warning, the attacker could later reset the password. Phase 3 should consider a cooling-off period: an address verified shortly after replacing a verified one can't be used for resets for a few days.
+
+## Testing and acceptance criteria
+
+**Automated:**
+
+- [ ] Unit tests: code generation (format, rejection sampling), hashing and constant-time check, input normalization, expiry, attempt counting and cancellation, resend rules, form layout per state, submission order, new outcomes, event payloads (`previous_status`, `source`, and that the verification event fires on every `"changed"` result).
+- [ ] Scansion: the set → code → verify flow, wrong codes, attempt exhaustion, resend, and the form for each state. Scansion can't read email, so a test-only helper module (under `test/`) hooks `recovery-email-verification-requested` and sends the code to the user as an XMPP message, from which the script captures it.
+- [ ] Both storage backends, as in phase 1.
+
+**Manual, with Gajim and the dev server's mail catcher** (see `mod_smtp_async`'s plan):
+
+- [ ] Saving an address sends a code to it, and entering the code verifies it.
+- [ ] Wrong codes, expiry (with `recovery_email_code_lifetime` set to a few minutes), and resend behave as in the outcomes table.
+- [ ] Replacing or removing a verified address emails the previous address; replacing an unverified one doesn't.
+- [ ] Logs never contain a code or a full address.
