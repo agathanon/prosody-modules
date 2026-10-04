@@ -50,7 +50,7 @@ Configuration
 
   Option                      Default                       Description
   --------------------------- ----------------------------- ---------------------------------------------------
-  `recovery_email_from`       `"noreply@"` + the host       Sender address of the emails
+  `recovery_email_from`       `smtp_async_from`             Sender address of the emails, if different from mod_smtp_async's
   `recovery_email_messages`   built-in English texts        Subjects and bodies to use instead (see below)
 
 If Prosody's `contact_info` option has an `admin` entry (as used by
