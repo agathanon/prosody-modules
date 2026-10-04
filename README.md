@@ -25,6 +25,10 @@ Copy (or symlink) a module directory into a directory on Prosody's
 `plugin_paths`, then add the module to `modules_enabled`. See each
 module's README for its configuration options.
 
+For a complete production setup of the recovery email modules (password
+reset through a verified email address), see
+[docs/deployment.md](docs/deployment.md).
+
 ## Development
 
 ### Reference checkouts
