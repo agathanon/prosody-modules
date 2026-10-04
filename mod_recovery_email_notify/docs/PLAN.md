@@ -85,3 +85,26 @@ The defaults are drafted during implementation and reviewed with the user before
 - `mod_smtp_async/docs/PLAN.md`: the sending API.
 - Prosody 13 source: `util/interpolation.lua` (used by `plugins/mod_invites.lua` and `plugins/mod_http_errors.lua`), and `plugins/mod_server_contact_info.lua` for the `contact_info` option.
 - prosody-modules: `mod_invites_page/mod_invites_page.lua` for templating with `util.interpolation` in a community module.
+
+---
+
+# Phase 3: password reset emails
+
+Oct 4, 2026
+
+`mod_recovery_email_reset` (see its `docs/PLAN.md`) fires two new events; this module sends an email for each.
+
+| Email | Sent when | To | Purpose |
+| --- | --- | --- | --- |
+| Reset link | `recovery-email-reset-requested` | The verified address | The single-use link and when it expires |
+| Password reset | `recovery-email-password-reset` | The verified address | Confirms the reset, so the owner learns if someone else did it |
+
+- Both are added to `recovery_email_messages` as `reset` and `reset_done`, with built-in English texts, reviewed with the user before release.
+- New placeholder `{url}` (reset email only). `{expires}`, `{time}`, `{jid}`, `{host}` and `{contact}` work as before.
+- The reset email says to ignore it if the reset wasn't requested, and that the password stays unchanged unless the link is used. The confirmation says what to do if the reset wasn't the owner's (`{contact}`).
+- The link is secret: it's never logged, only put in the email.
+
+## Testing
+
+- [ ] Unit tests: both events produce the right email to the right address, the link appears only in the reset email, and nothing secret is logged.
+- [ ] Covered end to end by the reset module's integration test.

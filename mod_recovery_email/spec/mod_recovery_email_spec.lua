@@ -14,9 +14,12 @@ local function to_hex(s)
 	return (s:gsub(".", function (c) return ("%02x"):format(c:byte()); end));
 end
 
--- Load a fresh instance of the module; returns its environment and the stubs
-local function load_module()
-	local store = new_store();
+-- Load a fresh instance of the module; config sets module options.
+-- Returns its environment and the stubs.
+local function load_module(config)
+	config = config or {};
+	local stores = { recovery_email = new_store(); recovery_email_removed = new_store() };
+	local store = stores.recovery_email;
 	local accounts = { alice = { created = 1000 } };
 	local events, hooks, items, logs = {}, {}, {}, {};
 	-- Rate limiters by their limit: 5 for changes, 3 for resends
@@ -80,8 +83,15 @@ local function load_module()
 		host = "localhost";
 		name = "recovery_email";
 		log = function (_, level, fmt, ...) logs[#logs+1] = level..": "..fmt:format(...); end;
-		get_option_period = function (_, _, default) assert(default == "24 hours"); return 86400; end;
-		open_store = function () return store; end;
+		get_option_period = function (_, name, default)
+			if name == "recovery_email_code_lifetime" then
+				assert(default == "24 hours");
+				return 86400;
+			end
+			if config[name] == nil then return default; end
+			return config[name];
+		end;
+		open_store = function (_, name) return assert(stores[name], "unexpected store "..name); end;
 		require = function () return { new = function (...) return { ... }; end }; end;
 		fire_event = function (_, name, payload) events[#events+1] = { name = name, payload = payload }; end;
 		hook = function (_, name, handler) hooks[name] = handler; end;
@@ -98,7 +108,7 @@ local function load_module()
 	assert(loadfile(module_path, "t", env))();
 
 	return env, {
-		store = store, accounts = accounts, events = events, hooks = hooks,
+		store = store, removed = stores.recovery_email_removed, accounts = accounts, events = events, hooks = hooks,
 		items = items, throttles = throttles, logs = logs, random_queue = random_queue,
 	};
 end
@@ -399,6 +409,118 @@ describe("mod_recovery_email", function ()
 		end);
 	end);
 
+	describe("get_reset_address()", function ()
+		it("returns only a verified address", function ()
+			assert.same({ nil, "none" }, { env.get_reset_address("alice") });
+			env.set("alice", "a@example.org");
+			assert.same({ nil, "unverified" }, { env.get_reset_address("alice") });
+			env.verify("alice", last_code(s));
+			assert.same({ "a@example.org" }, { env.get_reset_address("alice") });
+		end);
+
+		it("ignores stale records from an earlier account", function ()
+			s.store.data.alice = { email = "old@example.org", status = "verified", account_created = 1 };
+			assert.same({ nil, "none" }, { env.get_reset_address("alice") });
+		end);
+	end);
+
+	describe("cooling-off period", function ()
+		local DELAY = 7 * 86400;
+
+		-- Sets an address and verifies it
+		local function set_verified(email)
+			env.set("alice", email);
+			assert.same({ true, "verified" }, { env.verify("alice", last_code(s)) });
+		end
+
+		local function assert_cooling_off()
+			local address, reason, ends = env.get_reset_address("alice");
+			assert.is_nil(address);
+			assert.equal("cooling-off", reason);
+			assert.equal(s.store.data.alice.verified_at + DELAY, ends);
+		end
+
+		it("is off by default", function ()
+			set_verified("a@example.org");
+			set_verified("b@example.org");
+			assert.is_nil(s.store.data.alice.reset_allowed_after);
+			assert.equal("b@example.org", env.get_reset_address("alice"));
+			env.clear("alice");
+			assert.is_nil(s.removed.data.alice);
+		end);
+
+		describe("when configured", function ()
+			before_each(function ()
+				env, s = load_module({ recovery_email_reset_delay = DELAY });
+			end);
+
+			it("doesn't apply to a first address", function ()
+				set_verified("a@example.org");
+				assert.equal("a@example.org", env.get_reset_address("alice"));
+			end);
+
+			it("applies to an address that replaced a verified one", function ()
+				set_verified("a@example.org");
+				set_verified("b@example.org");
+				assert_cooling_off();
+				assert.is_nil(s.store.data.alice.replaced_verified);
+			end);
+
+			it("carries through unverified addresses in between", function ()
+				set_verified("a@example.org");
+				env.set("alice", "b@example.org");
+				set_verified("c@example.org");
+				assert_cooling_off();
+			end);
+
+			it("doesn't apply to an address that replaced an unverified one", function ()
+				env.set("alice", "a@example.org");
+				set_verified("b@example.org");
+				assert.equal("b@example.org", env.get_reset_address("alice"));
+			end);
+
+			it("can't be skipped by removing the verified address first", function ()
+				set_verified("a@example.org");
+				env.clear("alice");
+				assert.is_number(s.removed.data.alice.at);
+				set_verified("b@example.org");
+				assert_cooling_off();
+				assert.is_nil(s.removed.data.alice);
+			end);
+
+			it("doesn't apply once the removal is older than the delay", function ()
+				set_verified("a@example.org");
+				env.clear("alice");
+				s.removed.data.alice.at = os.time() - DELAY - 1;
+				set_verified("b@example.org");
+				assert.equal("b@example.org", env.get_reset_address("alice"));
+			end);
+
+			it("ends after the delay", function ()
+				set_verified("a@example.org");
+				set_verified("b@example.org");
+				s.store.data.alice.reset_allowed_after = os.time() - 1;
+				assert.equal("b@example.org", env.get_reset_address("alice"));
+			end);
+
+			it("is shown by the shell", function ()
+				set_verified("a@example.org");
+				set_verified("b@example.org");
+				local printed = {};
+				local shell = { session = { print = function (line) printed[#printed+1] = line; end } };
+				s.items["shell-command:show"].handler(shell, "alice@localhost");
+				assert.matches("^Reset:       usable from .* UTC$", printed[6]);
+			end);
+
+			it("forgets removals when the account is deleted", function ()
+				set_verified("a@example.org");
+				env.clear("alice");
+				s.hooks["user-deleted"]({ username = "alice", host = "localhost" });
+				assert.is_nil(s.removed.data.alice);
+			end);
+		end);
+	end);
+
 	describe("account lifecycle", function ()
 		it("removes the record when the account is deleted", function ()
 			env.set("alice", "a@example.org");
@@ -542,7 +664,8 @@ describe("mod_recovery_email", function ()
 				{ run("set", "alice@localhost", "a@example.org") });
 			assert.truthy(run("show", "alice@localhost"));
 			assert.equal("Email:       a@example.org", printed[1]);
-			assert.matches("^Code:        pending, expires .* UTC, 0 of 5 attempts used$", printed[6]);
+			assert.equal("Reset:       not usable (unverified)", printed[6]);
+			assert.matches("^Code:        pending, expires .* UTC, 0 of 5 attempts used$", printed[7]);
 			assert.same({ true, "Recovery email removed" }, { run("clear", "alice@localhost") });
 			assert.same({ "recovery-email-set", "recovery-email-verification-requested", "recovery-email-cleared" },
 				event_names(s));

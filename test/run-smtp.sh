@@ -1,6 +1,7 @@
 #!/bin/sh
-# Integration tests for mod_smtp_async: send real email from the test
-# Prosody to Mailpit, and check what arrives.
+# Integration tests for modules that send email (mod_smtp_async,
+# mod_recovery_email_notify, mod_recovery_email_reset): send real email from
+# the test Prosody to Mailpit, and check what arrives.
 #
 # Usage: test/run-smtp.sh
 set -eu
@@ -132,6 +133,59 @@ shell "recovery:clear('notify@localhost')" >/dev/null
 wait_for_mail notify-two@example.org 2
 notice=$(mail_text "$(mail_ids notify-two@example.org | head -n 1)")
 check_contains "removing a verified address notifies it" "$notice" "was removed"
+
+# mod_recovery_email_reset, end to end: request a link, use it, sign in
+
+# web PATH [POST-DATA]: fetch a reset page from reset.localhost, as a browser would
+web() {
+	if [ -n "${2:-}" ]; then
+		compose exec -T prosody wget -qO- --content-on-error --header "Host: reset.localhost" \
+			--post-data "$2" "http://127.0.0.1:5280$1" 2>/dev/null || true
+	else
+		compose exec -T prosody wget -qO- --content-on-error --header "Host: reset.localhost" \
+			"http://127.0.0.1:5280$1" 2>/dev/null || true
+	fi
+}
+
+users="require'prosody.core.usermanager'"
+recovery="require'prosody.core.modulemanager'.get_module('reset.localhost', 'recovery_email')"
+shell "> return tostring(($users.create_user('resetter', 'old password', 'reset.localhost')))" >/dev/null
+shell "> return tostring(($recovery.set('resetter', 'resetter@example.org')))" >/dev/null
+wait_for_mail resetter@example.org 1
+reset_code=$(code_for resetter@example.org)
+check "reset test account has a verified address" \
+	"$(shell "> return tostring(($recovery.verify('resetter', '$reset_code')))")" "true"
+
+requested=$(web /recovery_email_reset "jid=resetter%40reset.localhost")
+check_contains "reset request is answered" "$requested" "we&apos;ve sent a link to it"
+check "unknown account gets the same answer" "$(web /recovery_email_reset "jid=nobody%40reset.localhost")" "$requested"
+
+wait_for_mail resetter@example.org 2
+reset_path=$(for id in $(mail_ids resetter@example.org); do
+	mail_text "$id" | grep -o '/recovery_email_reset/reset/[A-Za-z0-9_-]*' && break
+done | head -n 1)
+check_contains "reset link opens the password form" "$(web "$reset_path")" \
+	"Choose a new password for <strong>resetter@reset.localhost</strong>"
+check_contains "mismatched passwords are refused" \
+	"$(web "$reset_path" "password=new+password+1&confirm=something+else")" "The passwords don&apos;t match."
+check_contains "new password is accepted" \
+	"$(web "$reset_path" "password=new+password+1&confirm=new+password+1")" "Your password has been changed."
+check "new password works" \
+	"$(shell "> return tostring(($users.test_password('resetter', 'reset.localhost', 'new password 1')))")" "true"
+check "old password no longer works" \
+	"$(shell "> return tostring(($users.test_password('resetter', 'reset.localhost', 'old password')))")" "nil"
+check_contains "used link is refused" "$(web "$reset_path")" "This link is invalid or has expired."
+wait_for_mail resetter@example.org 3
+check_contains "confirmation email arrives" \
+	"$(compose exec -T mailpit wget -qO- "http://localhost:8025/api/v1/search?query=to:resetter@example.org")" \
+	"The password for resetter@reset.localhost was reset"
+
+if compose logs prosody 2>&1 | grep -qF "${reset_path##*/}"; then
+	echo "FAIL  logs contain a reset token"
+	failures=$((failures + 1))
+else
+	echo "pass  logs contain no reset tokens"
+fi
 
 if compose logs prosody 2>&1 | grep -E "recovery_email" | grep -qE "$code|notify-one@|notify-two@"; then
 	echo "FAIL  logs contain a verification code or a full address"

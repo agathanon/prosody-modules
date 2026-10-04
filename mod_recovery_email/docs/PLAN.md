@@ -341,3 +341,43 @@ The form is built per request from the record's state, instead of from one fixed
 - [ ] Wrong codes, expiry (with `recovery_email_code_lifetime` set to a few minutes), and resend behave as in the outcomes table.
 - [ ] Replacing or removing a verified address emails the previous address; replacing an unverified one doesn't.
 - [ ] Logs never contain a code or a full address.
+
+---
+
+# Phase 3: password reset support
+
+Oct 4, 2026
+
+Phase 3 adds a web-based password reset in a new module, `mod_recovery_email_reset` (see its `docs/PLAN.md`). This module keeps deciding which address may be used, so the reset module never reads records directly.
+
+## Cooling-off period
+
+Without re-authentication on change (a phase 2 decision), someone with brief access to a logged-in session can replace the owner's verified address with their own and verify it. The owner is warned by email, but if they miss it, the attacker could later reset the password. An optional cooling-off period closes that window: an address that took the place of a verified one can't be used for resets until the period has passed.
+
+- Option: `recovery_email_reset_delay`, read with `module:get_option_period()`. Default `0`, meaning off (decided in planning).
+- It applies when the new address **replaced a verified address**, and also when it was set shortly after a verified address was **removed**, so removing and re-adding can't be used to skip it. It doesn't apply to a user's first address, or to one replacing an unverified address.
+
+**Record fields** (old records stay valid; `version` stays `1`):
+
+| Field | Type | Purpose |
+| --- | --- | --- |
+| `replaced_verified` | boolean or nil | Set by `set()` when the previous address was verified, or itself replaced a verified one, or a verified address was removed within the delay period; cleared on verification |
+| `reset_allowed_after` | number or nil | Set on verification when `replaced_verified` was set and the delay is non-zero: the time from which the address can be used for resets |
+
+To catch remove-then-add, `clear()` of a verified address stores the removal time in a small separate store (`recovery_email_removed`, keyed by username) when the delay is non-zero. `set()` checks it, and entries older than the delay are ignored and deleted.
+
+## API addition
+
+| Function | Returns | Behavior |
+| --- | --- | --- |
+| `get_reset_address(username)` | email, or `nil, reason` | The address to send a reset link to. Reasons: `"none"` (no record), `"unverified"`, `"cooling-off"` (with the time it ends as a third value) |
+
+It uses `get()`, so stale records from earlier accounts are never returned. Checking that the account is enabled is left to the reset module.
+
+## Shell
+
+`recovery show` adds a line: `Reset:       usable`, `usable from <date>`, or `not usable (unverified)`.
+
+## Testing
+
+- [ ] Unit tests: the flag set by `set()` in each case (first address, replacing verified, replacing unverified that had replaced verified, remove-then-add within and after the delay), `reset_allowed_after` set on verification, `get_reset_address()` results, and no effect when the delay is `0`.

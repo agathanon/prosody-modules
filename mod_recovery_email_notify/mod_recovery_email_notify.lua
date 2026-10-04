@@ -1,4 +1,5 @@
--- Send the emails for mod_recovery_email: verification codes and change notices
+-- Send the emails for mod_recovery_email: verification codes, change notices,
+-- and password reset links and confirmations
 local interpolation = require "prosody.util.interpolation";
 
 module:depends("recovery_email");
@@ -54,6 +55,40 @@ This address will no longer be used to recover the account.
 If you made this change, no action is needed.
 
 If you didn't, someone else may have access to your account.
+{contact&Contact the server administrator: {contact}}{contact~Contact the administrator of {host}.}
+]];
+	};
+	reset = {
+		subject = "Reset your password for {jid}";
+		body = [[
+Hello,
+
+Someone, hopefully you, asked to reset the password for the account
+{jid}.
+
+To choose a new password, open this link:
+
+{url}
+
+The link can be used once, and is valid until {expires}.
+
+If you didn't ask for this, you can ignore this email. Your password
+stays the same unless the link is used.
+]];
+	};
+	reset_done = {
+		subject = "The password for {jid} was reset";
+		body = [[
+Hello,
+
+The password for the account {jid} was reset at {time}.
+
+It was reset using a link sent to this address. Devices that were
+signed in to the account have been signed out.
+
+If you did this, no action is needed.
+
+If you didn't, someone else may have access to this email account.
 {contact&Contact the server administrator: {contact}}{contact~Contact the administrator of {host}.}
 ]];
 	};
@@ -150,4 +185,18 @@ module:hook("recovery-email-cleared", function (event)
 			time = format_time(os.time());
 		});
 	end
+end);
+
+-- The event carries the secret reset link: it goes into the email and nowhere else
+module:hook("recovery-email-reset-requested", function (event)
+	send("reset", event.email, event.username, {
+		url = event.url;
+		expires = format_time(event.expires);
+	});
+end);
+
+module:hook("recovery-email-password-reset", function (event)
+	send("reset_done", event.email, event.username, {
+		time = format_time(os.time());
+	});
 end);

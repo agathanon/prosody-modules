@@ -12,6 +12,8 @@ local utf8_valid = require "prosody.util.encodings".utf8.valid;
 local new_adhoc = module:require("adhoc").new;
 
 local store = module:open_store("recovery_email");
+-- When verified addresses were removed, to apply reset_delay to the next one
+local removed_store = module:open_store("recovery_email_removed");
 
 local SCHEMA_VERSION = 1;
 local MAX_LENGTH = 254;
@@ -21,6 +23,9 @@ local RATE_LIMIT_RESENDS, RATE_LIMIT_RESEND_PERIOD = 3, 3600;
 local MAX_CODE_ATTEMPTS = 5;
 
 local code_lifetime = module:get_option_period("recovery_email_code_lifetime", "24 hours");
+-- Cooling-off period before an address that took the place of a verified
+-- one can be used for password resets; 0 turns it off
+local reset_delay = module:get_option_period("recovery_email_reset_delay", 0);
 
 -- Non-ASCII whitespace and invisible characters that Lua's %s does not match
 local unicode_space = {
@@ -171,6 +176,20 @@ local function request_verification_email(username, record, code)
 	});
 end
 
+-- Whether a new address takes the place of a verified one: directly, through
+-- unverified addresses in between, or soon after a verified one was removed
+local function replaces_verified(username, record, now)
+	if record then
+		return record.status == "verified" or record.replaced_verified == true;
+	end
+	local removed = removed_store:get(username);
+	if not removed then
+		return false;
+	end
+	removed_store:set(username, nil);
+	return reset_delay > 0 and removed.at + reset_delay > now;
+end
+
 -- Returns true and "changed"/"unchanged", or nil, error_code, message.
 -- A changed address is stored unverified and a verification code is sent.
 function set(username, email, source) --luacheck: ignore 131/set
@@ -197,6 +216,7 @@ function set(username, email, source) --luacheck: ignore 131/set
 		created_at = record and record.created_at or now;
 		updated_at = now;
 		account_created = account_created(username);
+		replaced_verified = replaces_verified(username, record, now) or nil;
 	};
 	local code = start_verification(new_record, now);
 	local ok, set_err = store:set(username, new_record);
@@ -232,6 +252,12 @@ function clear(username, source) --luacheck: ignore 131/clear
 		return nil, "internal-server-error", "Unable to remove the address";
 	end
 	module:log("info", "Recovery email for %s (%s) removed%s", username, mask(record.email), via(source));
+	if record.status == "verified" and reset_delay > 0 then
+		local removed_ok, removed_err = removed_store:set(username, { at = os.time() });
+		if not removed_ok then
+			module:log("error", "Unable to record removal of recovery email for %s: %s", username, removed_err);
+		end
+	end
 	module:fire_event("recovery-email-cleared", {
 		username = username;
 		host = module.host;
@@ -270,6 +296,10 @@ function verify(username, input) --luacheck: ignore 131/verify
 	if code and check_code(record.verify_token_hash, code) then
 		record.status = "verified";
 		record.verified_at = now;
+		if record.replaced_verified and reset_delay > 0 then
+			record.reset_allowed_after = now + reset_delay;
+		end
+		record.replaced_verified = nil;
 		clear_verification(record);
 		local ok, set_err = store:set(username, record);
 		if not ok then return write_failed(username, set_err); end
@@ -320,6 +350,23 @@ function resend_verification(username, source) --luacheck: ignore 131/resend_ver
 	return true;
 end
 
+-- The address to send a password reset link to, or nil and a reason:
+-- "none", "unverified", "cooling-off" (with the time it ends) or "error"
+function get_reset_address(username) --luacheck: ignore 131/get_reset_address
+	local record, err = get(username);
+	if err then
+		module:log("error", "Unable to read recovery email for %s: %s", username, err);
+		return nil, "error";
+	elseif not record then
+		return nil, "none";
+	elseif record.status ~= "verified" then
+		return nil, "unverified";
+	elseif record.reset_allowed_after and os.time() < record.reset_allowed_after then
+		return nil, "cooling-off", record.reset_allowed_after;
+	end
+	return record.email;
+end
+
 -- Account lifecycle
 
 module:hook_global("user-deleted", function (event)
@@ -328,6 +375,7 @@ module:hook_global("user-deleted", function (event)
 	if not ok then
 		module:log("error", "Unable to remove recovery email of deleted user %s: %s", event.username, err);
 	end
+	removed_store:set(event.username, nil);
 end);
 
 module:hook("user-registered", function (event)
@@ -335,6 +383,7 @@ module:hook("user-registered", function (event)
 	if not ok then
 		module:log("error", "Unable to remove leftover recovery email for %s: %s", event.username, err);
 	end
+	removed_store:set(event.username, nil);
 end);
 
 -- Ad-hoc command
@@ -541,6 +590,13 @@ module:add_item("shell-command", {
 		print("Created:     "..date(record.created_at));
 		print("Updated:     "..date(record.updated_at));
 		print("Verified:    "..date(record.verified_at));
+		if record.status ~= "verified" then
+			print("Reset:       not usable (unverified)");
+		elseif record.reset_allowed_after and os.time() < record.reset_allowed_after then
+			print("Reset:       usable from "..date(record.reset_allowed_after));
+		else
+			print("Reset:       usable");
+		end
 		if record.verify_token_hash then
 			print(("Code:        pending, expires %s, %d of %d attempts used"):format(
 				date(record.verify_expires), record.verify_attempts or 0, MAX_CODE_ATTEMPTS));

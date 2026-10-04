@@ -135,6 +135,51 @@ describe("mod_recovery_email_notify", function ()
 		end);
 	end);
 
+	describe("password reset emails", function ()
+		local url = "https://example.com/recovery_email_reset/reset/SECRETTOKEN";
+
+		it("sends the reset link to the verified address", function ()
+			fire(s, "recovery-email-reset-requested", { email = "alice@example.org"; url = url; expires = 1791048944 });
+			local m = s.sent[1].message;
+			assert.equal("alice@example.org", m.to);
+			assert.equal("Reset your password for alice@example.com", m.subject);
+			assert.truthy(m.body:find("\n"..url.."\n", 1, true));
+			assert.truthy(m.body:find("valid until 2026-10-03 17:35 UTC.", 1, true));
+			assert.same({ ["Auto-Submitted"] = "auto-generated" }, m.headers);
+			assert.falsy(m.body:find("{", 1, true));
+		end);
+
+		it("confirms a completed reset without any link", function ()
+			fire(s, "recovery-email-password-reset", { email = "alice@example.org" });
+			local m = s.sent[1].message;
+			assert.equal("alice@example.org", m.to);
+			assert.equal("The password for alice@example.com was reset", m.subject);
+			assert.truthy(m.body:find("was reset at %d%d%d%d%-%d%d%-%d%d %d%d:%d%d UTC"));
+			assert.truthy(m.body:find("Contact the administrator of example.com.\n", 1, true));
+			assert.falsy(m.body:find("http", 1, true));
+		end);
+
+		it("never logs the link or the full address", function ()
+			fire(s, "recovery-email-reset-requested", { email = "alice@example.org"; url = url; expires = 0 });
+			s.sent[1].resolve();
+			fire(s, "recovery-email-password-reset", { email = "alice@example.org" });
+			s.sent[2].reject({ text = "server replied 450 4.2.0 to rcpt" });
+			assert.same({
+				"info: Sent reset email for alice to a***@example.org",
+				"warn: Unable to send reset_done email for alice to a***@example.org: server replied 450 4.2.0 to rcpt",
+			}, s.logs);
+		end);
+
+		it("can be overridden in the configuration", function ()
+			s = load_module({ recovery_email_messages = { reset = { body = "Link: {url}" }; reset_done = { subject = "Done" } } });
+			fire(s, "recovery-email-reset-requested", { email = "a@example.org"; url = url; expires = 0 });
+			fire(s, "recovery-email-password-reset", { email = "a@example.org" });
+			assert.equal("Link: "..url, s.sent[1].message.body);
+			assert.equal("Done", s.sent[2].message.subject);
+			assert.same({}, s.logs);
+		end);
+	end);
+
 	describe("configuration", function ()
 		local function notice_body(config)
 			s = load_module(config);

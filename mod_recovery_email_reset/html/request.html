@@ -1,0 +1,8 @@
+<p>Enter your chat address, and we'll email a link to reset your password to your account's recovery email address.</p>
+{error&<p class="error">{error}</p>}
+<form method="post" action="{base_url}">
+<label for="jid">Chat address</label>
+<input id="jid" name="jid" type="text" value="{jid}" placeholder="name@{host}" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+<button type="submit">Send reset link</button>
+</form>
+<p class="hint">Only accounts with a verified recovery email address can be reset this way.</p>
