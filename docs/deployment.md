@@ -36,6 +36,11 @@ with config in `/etc/prosody/`, data in `/var/lib/prosody/` and logs in
 - **An SMTP account** for sending: port 465 with implicit TLS, or port
   587 with STARTTLS, and a username and password. Set up SPF, DKIM and
   DMARC for the sending domain, or the emails will land in spam.
+- **Outbound access to that port.** Some cloud providers block outbound
+  SMTP ports by default; DigitalOcean, for example, blocks 25, 465 and
+  587 on Droplets. Check with `nc -vz -w 5 smtp.example.net 465` from the
+  server. If it times out, ask the provider to unblock it, or use an
+  alternative port your mail provider offers (often 2525).
 - **HTTPS for the reset page**: a reverse proxy you already run (nginx,
   Caddy, Apache), or Prosody serving HTTPS itself. See
   [step 6](#6-make-the-reset-page-reachable-over-https).
@@ -96,7 +101,7 @@ smtp_async_server = "smtp.example.net"
 smtp_async_tls = "tls"                 -- implicit TLS; the port defaults to 465
 smtp_async_username = "noreply@example.com"
 smtp_async_password = FileLine("smtp-password")
-smtp_async_from = "noreply@example.com"
+smtp_async_from = "noreply@example.com"   -- an address your SMTP account may send as
 
 -- Shown in the "address changed/removed" and "password reset" emails
 contact_info = {
@@ -139,8 +144,10 @@ VirtualHost "example.com"
     http_external_url = "https://chat.example.com/"
 
     -- Optional
-    recovery_email_from = "noreply@example.com"
     recovery_email_reset_site_name = "Example Chat"
+    -- Only if these emails should come from a different sender than
+    -- smtp_async_from (your SMTP account must be allowed to send as it):
+    -- recovery_email_from = "accounts@example.com"
 ```
 
 `mod_smtp_async`, `mod_http` and `mod_cron` are loaded automatically as
@@ -332,6 +339,8 @@ From [`docs/security-controls.md`](security-controls.md):
 | Everyone gets "Too many requests" | The proxy isn't in `trusted_proxies` or doesn't set `X-Forwarded-For` (look for the warning). Rate limits also reset on restart. |
 | No email after a reset request | The page deliberately doesn't say why. Check `recovery show`: the address must be `verified` and `usable`, and the account enabled. The `debug` log gives the reason if you enable it briefly. |
 | `Configuration problem, all email will fail` | `smtp_async_username` without a password (or the reverse), credentials with `smtp_async_tls = "none"`, or a TLS context error. |
+| `timed out in state connecting` or `connection timeout` | Prosody can't reach the mail server: often a cloud provider blocking outbound SMTP ports (DigitalOcean blocks 25, 465 and 587). Test with `nc -vz -w 5 smtp.example.net 465`; ask the provider to unblock it, or use an alternative port such as 2525 with the matching `smtp_async_tls` mode. |
+| `server replied 553 … to mail` | The mail server won't let your account send as the sender address. Set `smtp_async_from` (and `recovery_email_from`, if you set it) to an address the account may send as, usually its login address. (`… to rcpt` means the recipient was refused instead.) |
 | `timed out in state greeting` | Probably `smtp_async_tls = "starttls"` (or `"none"`) against an implicit-TLS port such as 465: the server waits for a TLS handshake while Prosody waits for its greeting. Use `smtp_async_tls = "tls"`. |
 | `server does not offer STARTTLS` | The server doesn't support STARTTLS on that port. If your provider uses implicit TLS (port 465), set `smtp_async_tls = "tls"`. |
 | `TLS handshake failed` | `smtp_async_tls = "tls"` against a STARTTLS port such as 587 (use `"starttls"`), or the server's certificate isn't trusted (for a private CA, set `smtp_async_cafile`). |
