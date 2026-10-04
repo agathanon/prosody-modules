@@ -130,9 +130,10 @@ Limitations
 -   **Pages are in English.** They can be translated by replacing the
     templates (see above).
 -   **Response timing.** The request page answers the same way for every
-    account, but an eligible request may take very slightly longer (one
-    storage write). This isn't considered a practical way to find out
-    which accounts exist.
+    account, but an eligible request does more work before answering:
+    creating and storing the link, and preparing and queuing the email.
+    Someone measuring response times precisely, particularly with SQL
+    storage, could in principle tell eligible requests from others.
 
 Compatibility
 =============
