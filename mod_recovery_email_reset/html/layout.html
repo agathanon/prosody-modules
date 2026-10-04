@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{title} · {site_name}</title>
+<style>
+:root { color-scheme: light dark; --fg: #1d1d1f; --bg: #f5f5f7; --card: #fff; --muted: #6e6e73; --accent: #0b66d6; --error: #b3261e; --border: #d2d2d7; }
+@media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --bg: #111; --card: #1c1c1e; --muted: #a1a1a6; --accent: #4c9bff; --error: #ff6b61; --border: #3a3a3c; } }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+main { max-width: 26rem; margin: 10vh auto 0; padding: 24px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+h1 { margin: 0 0 4px; font-size: 1.4rem; }
+.site { margin: 0 0 20px; color: var(--muted); }
+label { display: block; margin: 16px 0 4px; font-weight: 600; }
+input { width: 100%; padding: 10px; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+button { width: 100%; margin-top: 20px; padding: 10px; font: inherit; font-weight: 600; color: #fff; background: var(--accent); border: 0; border-radius: 8px; cursor: pointer; }
+.error { color: var(--error); }
+.hint { color: var(--muted); font-size: 0.9rem; }
+a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+<h1>{title}</h1>
+<p class="site">{site_name}</p>
+{content!}
+</main>
+</body>
+</html>

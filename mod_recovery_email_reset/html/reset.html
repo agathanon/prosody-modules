@@ -1,0 +1,11 @@
+<p>Choose a new password for <strong>{jid}</strong>.</p>
+{error&<p class="error">{error}</p>}
+<form method="post" action="{action}">
+<input name="username" type="text" value="{jid}" autocomplete="username" hidden>
+<label for="password">New password</label>
+<input id="password" name="password" type="password" minlength="{min_length}" autocomplete="new-password" required>
+<label for="confirm">Confirm new password</label>
+<input id="confirm" name="confirm" type="password" minlength="{min_length}" autocomplete="new-password" required>
+<button type="submit">Change password</button>
+</form>
+<p class="hint">At least {min_length} characters. Changing your password signs out all your devices.</p>
