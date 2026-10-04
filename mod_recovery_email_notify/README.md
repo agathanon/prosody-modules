@@ -15,6 +15,11 @@ This module sends the emails that [mod_recovery_email] calls for:
     to the old address.
 -   **Address removed:** when a verified address is removed, a notice to
     that address.
+-   **Password reset link:** when a password reset is requested through
+    [mod_recovery_email_reset], the single-use link, to the verified
+    address.
+-   **Password was reset:** after a reset, a confirmation to the
+    verified address, so its owner learns if someone else did it.
 
 The notices let the owner of an address find out if someone else changed
 their account's recovery address. They only go to addresses that were
@@ -57,7 +62,7 @@ Changing the messages
 ---------------------
 
 `recovery_email_messages` can replace the subject or body of any of the
-three emails, for example to translate them:
+emails, for example to translate them:
 
 ```lua
 recovery_email_messages = {
@@ -72,18 +77,20 @@ Er ist gültig bis {expires}.
 }
 ```
 
-The keys are `verification`, `replaced` and `removed`, each with an
-optional `subject` and `body`; anything not given keeps its built-in
-text. Messages are plain text. These placeholders are filled in:
+The keys are `verification`, `replaced`, `removed`, `reset` and
+`reset_done`, each with an optional `subject` and `body`; anything not
+given keeps its built-in text. Messages are plain text. These
+placeholders are filled in:
 
   Placeholder      Value
   ---------------- ----------------------------------------------------------------
   `{jid}`          The account, e.g. `user@example.com`
   `{host}`         The host, e.g. `example.com`
-  `{code}`         The verification code (verification email only)
-  `{expires}`      When the code expires, in UTC (verification email only)
-  `{changed_by}`   "from the account" or "by a server administrator" (notices only)
-  `{time}`         When the change happened, in UTC (notices only)
+  `{code}`         The verification code (`verification` only)
+  `{url}`          The password reset link (`reset` only)
+  `{expires}`      When the code or link expires, in UTC (`verification` and `reset` only)
+  `{changed_by}`   "from the account" or "by a server administrator" (`replaced` and `removed` only)
+  `{time}`         When the change or reset happened, in UTC (`replaced`, `removed` and `reset_done` only)
   `{contact}`      The admin contact addresses from `contact_info`, if any
 
 `{contact&text}` shows `text` only when a contact is configured, and
@@ -93,7 +100,8 @@ Logging
 =======
 
 Each email is logged with its type and the masked recipient (e.g.
-`a***@example.org`). Codes and full addresses are never logged.
+`a***@example.org`). Codes, reset links and full addresses are never
+logged.
 
 Compatibility
 =============
