@@ -65,3 +65,11 @@ VirtualHost "untrusted.localhost"
 	smtp_async_server = "mailpit"
 	smtp_async_cafile = "/etc/ssl/certs/ca-certificates.crt"
 	smtp_async_retries = 0
+
+-- Password reset through the recovery address, with real password storage
+-- (the other hosts accept any password, so a reset couldn't be checked)
+VirtualHost "reset.localhost"
+	authentication = "internal_hashed"
+	modules_enabled = { "recovery_email", "recovery_email_notify", "recovery_email_reset", "smtp_async" }
+	smtp_async_server = "mailpit"
+	http_external_url = "http://reset.localhost:5280/"
