@@ -25,17 +25,21 @@ end
 
 local function new_store()
 	local data = {};
-	return {
-		data = data;
-		get = function (_, key) return data[key]; end;
-		set = function (_, key, value) data[key] = value; return true; end;
-		users = function ()
-			local keys = {};
-			for k in pairs(data) do keys[#keys+1] = k; end
-			local i = 0;
-			return function () i = i + 1; return keys[i]; end;
-		end;
-	};
+	local store = { data = data };
+	store.get = function (_, key) return data[key]; end;
+	-- set store.fail to make writes fail
+	store.set = function (_, key, value)
+		if store.fail then return nil, "storage error"; end
+		data[key] = value;
+		return true;
+	end;
+	store.users = function ()
+		local keys = {};
+		for k in pairs(data) do keys[#keys+1] = k; end
+		local i = 0;
+		return function () i = i + 1; return keys[i]; end;
+	end;
+	return store;
 end
 
 local function to_hex(s)
@@ -60,6 +64,47 @@ local function formencode(t)
 	end
 	return table.concat(parts, "&");
 end
+
+-- Stand-in for util.ip: parses IPv4 and IPv6 (with "::" and embedded IPv4)
+local function v6_packed(addr)
+	local v4 = addr:match("(%d+%.%d+%.%d+%.%d+)$");
+	if v4 then
+		local a, b, c, d = v4:match("(%d+)%.(%d+)%.(%d+)%.(%d+)");
+		addr = addr:sub(1, -#v4 - 1)..("%x:%x"):format(a * 256 + b, c * 256 + d);
+	end
+	local head, tail = addr:match("^(.-)::(.-)$");
+	local function groups(part)
+		local t = {};
+		for g in part:gmatch("[^:]+") do t[#t+1] = tonumber(g, 16); end
+		return t;
+	end
+	local hg, tg = groups(head or addr), groups(tail or "");
+	local all = {};
+	for _, g in ipairs(hg) do all[#all+1] = g; end
+	for _ = 1, 8 - #hg - #tg do all[#all+1] = 0; end
+	for _, g in ipairs(tg) do all[#all+1] = g; end
+	local bytes = {};
+	for _, g in ipairs(all) do bytes[#bytes+1] = string.char(g // 256, g % 256); end
+	return table.concat(bytes);
+end
+
+local function new_ip(addr)
+	if addr:match("^%d+%.%d+%.%d+%.%d+$") then
+		return { proto = "IPv4"; normal = addr; packed = addr };
+	elseif addr:find(":", 1, true) then
+		local packed = v6_packed(addr);
+		return { proto = "IPv6"; packed = packed; normal = to_hex(packed) };
+	end
+	return nil, "invalid";
+end
+
+local ip_stub = {
+	new_ip = new_ip;
+	truncate = function (ip, bits)
+		local packed = ip.packed:sub(1, bits // 8)..("\0"):rep(#ip.packed - bits // 8);
+		return { proto = ip.proto; packed = packed; normal = to_hex(packed) };
+	end;
+};
 
 -- Load a fresh instance; config sets module options
 local function load_module(config)
@@ -93,6 +138,7 @@ local function load_module(config)
 			end;
 		};
 		["prosody.util.interpolation"] = { new = function (_, escape) return new_render(escape); end };
+		["prosody.util.ip"] = ip_stub;
 		["prosody.util.jid"] = {
 			prepped_split = function (jid)
 				local node, host = jid:match("^([^@/%s<>]+)@([^@/%s<>]+)$");
@@ -105,8 +151,9 @@ local function load_module(config)
 		};
 		["prosody.util.throttle"] = {
 			create = function (limit)
-				throttles[limit] = throttles[limit] or { allow = true; polls = 0 };
+				throttles[limit] = throttles[limit] or { allow = true; polls = 0; created = 0 };
 				local state = throttles[limit];
+				state.created = state.created + 1; -- one per rate-limit key
 				return {
 					poll = function () state.polls = state.polls + 1; return state.allow; end;
 				};
@@ -166,10 +213,14 @@ local function load_module(config)
 end
 
 -- Calls a route like mod_http would; returns status, body and headers
-local function http(s, method, path, form, ip)
+local function http(s, method, path, form, ip, headers, peer)
 	local response = { headers = {} };
+	ip = ip or "192.0.2.1";
 	local event = {
-		request = { ip = ip or "192.0.2.1"; body = form and formencode(form) or "" };
+		request = {
+			ip = ip; body = form and formencode(form) or ""; headers = headers or {};
+			conn = { ip = function () return peer or ip; end };
+		};
 		response = response;
 	};
 	local body;
@@ -293,6 +344,52 @@ describe("mod_recovery_email_reset", function ()
 			s.throttles[3].allow = false;
 			assert.equal(429, (http(s, "POST", "/", { jid = "alice@example.com" })));
 			assert.equal(1, #s.events);
+		end);
+
+		it("apply per-IP limits to whole IPv6 /64s, and to IPv4-mapped addresses as IPv4", function ()
+			local function keys_created()
+				return s.throttles[10] and s.throttles[10].created or 0;
+			end
+			http(s, "POST", "/", { jid = "a" }, "2001:db8:1:2::1");
+			http(s, "POST", "/", { jid = "b" }, "2001:db8:1:2:ffff:ffff:ffff:ffff");
+			assert.equal(1, keys_created()); -- same /64, same limit
+			http(s, "POST", "/", { jid = "c" }, "2001:db8:1:3::1");
+			assert.equal(2, keys_created()); -- another /64
+			http(s, "POST", "/", { jid = "d" }, "192.0.2.7");
+			http(s, "POST", "/", { jid = "e" }, "::ffff:192.0.2.7");
+			assert.equal(3, keys_created()); -- mapped address counts as the IPv4 address
+		end);
+
+		it("warn once when an untrusted proxy forwards requests", function ()
+			local function proxy_warnings()
+				local n = 0;
+				for _, line in ipairs(s.logs) do
+					if line:match("^warn: Requests from 10%.0%.0%.1 carry X%-Forwarded%-For") then n = n + 1; end
+				end
+				return n;
+			end
+			-- trusted proxy: mod_http has replaced request.ip with the client's address
+			http(s, "POST", "/", { jid = "a" }, "198.51.100.9", { x_forwarded_for = "198.51.100.9" }, "10.0.0.1");
+			assert.equal(0, proxy_warnings());
+			-- untrusted: request.ip is still the proxy's address
+			http(s, "POST", "/", { jid = "a" }, "10.0.0.1", { x_forwarded_for = "198.51.100.9" });
+			http(s, "POST", "/", { jid = "a" }, "10.0.0.1", { x_forwarded_for = "198.51.100.9" });
+			assert.equal(1, proxy_warnings());
+		end);
+
+		it("keep no untracked link when storage fails", function ()
+			local first = request_link(s);
+			s.stores.recovery_email_reset_pending.fail = true;
+			local status, body = http(s, "POST", "/", { jid = "alice@example.com" });
+			-- same answer, no email, no extra token, and the earlier link still works
+			assert.equal(200, status);
+			assert.truthy(text(body):find("we&apos;ve sent a link", 1, true));
+			assert.equal(1, #s.events);
+			local count = 0;
+			for _ in pairs(s.stores.recovery_email_reset_tokens.data) do count = count + 1; end
+			assert.equal(1, count);
+			s.stores.recovery_email_reset_pending.fail = nil;
+			assert.equal(200, (http(s, "GET", "/reset/"..first)));
 		end);
 
 		it("replace the previous link", function ()

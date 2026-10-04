@@ -62,6 +62,10 @@ https://prosody.im/doc/http
 
 Behind a reverse proxy, also set `trusted_proxies` so that the per-IP
 rate limits see visitors' real addresses rather than the proxy's.
+Otherwise all visitors share the proxy's address, and so a single
+per-IP limit, which can make the reset page unusable for everyone. The
+module logs a warning when requests carry `X-Forwarded-For` from an
+address that isn't in `trusted_proxies`.
 
 Configuration
 =============
@@ -70,7 +74,7 @@ Configuration
   -------------------------------------------- ------------------------- ------------------------------------------------------
   `recovery_email_reset_link_lifetime`         `"1 hour"`                How long a reset link stays valid
   `recovery_email_reset_requests_per_jid`      `3`                       Reset requests per account per hour
-  `recovery_email_reset_requests_per_ip`       `10`                      Requests, and password submissions, per IP per hour
+  `recovery_email_reset_requests_per_ip`       `10`                      Requests, and password submissions, per IP (IPv6: per /64) per hour
   `recovery_email_reset_min_password_length`   `8`                       Minimum length of the new password
   `recovery_email_reset_site_name`             the host                  Name shown on the pages
   `recovery_email_reset_template_path`         built-in templates        Directory with replacement page templates
@@ -100,8 +104,10 @@ Security
 -   Pages send headers that forbid scripts, framing and other sites'
     access (CORS), and stop the link from leaking through the `Referer`
     header.
--   Requests are rate limited per account and per IP address. Requests
-    for unknown accounts count the same as for real ones.
+-   Requests are rate limited per account and per IP address. IPv6
+    addresses are limited per /64, since one client usually controls a
+    whole /64. Requests for unknown accounts count the same as for real
+    ones.
 
 Logging
 =======
@@ -119,14 +125,20 @@ Limitations
     path. On a server logging at `debug` level, anyone who can read the
     logs while a link is valid could use it. Links are single-use and
     expire after an hour, so a token in an old log is useless.
+-   **App tokens and other authentication backends.** Prosody only
+    invalidates older app tokens (e.g. OAuth grants) after a password
+    change if the authentication backend reports when the password
+    changed; `internal_hashed` does, others may not. Sessions are
+    disconnected either way.
 -   **Rate limits are kept in memory.** They reset when the module is
     reloaded or Prosody restarts.
 -   **Pages are in English.** They can be translated by replacing the
     templates (see above).
 -   **Response timing.** The request page answers the same way for every
-    account, but an eligible request may take very slightly longer (one
-    storage write). This isn't considered a practical way to find out
-    which accounts exist.
+    account, but an eligible request does more work before answering:
+    creating and storing the link, and preparing and queuing the email.
+    Someone measuring response times precisely, particularly with SQL
+    storage, could in principle tell eligible requests from others.
 
 Compatibility
 =============

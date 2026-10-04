@@ -193,6 +193,15 @@ describe("mod_recovery_email", function ()
 			invalid("user\u{200B}@example.org");
 		end);
 
+		it("rejects RFC 5322 special characters", function ()
+			for _, c in ipairs({ "(", ")", "<", ">", "[", "]", ":", ";", "\\", ",", '"' }) do
+				invalid("a"..c.."b@example.org");
+				invalid("ab@exa"..c.."mple.org");
+			end
+			invalid("a@[192.0.2.1]");
+			valid("o'brien+tag@example.org");
+		end);
+
 		it("rejects invalid UTF-8", function ()
 			invalid("user\255@example.org");
 			invalid("user\192\128@example.org");
@@ -486,6 +495,15 @@ describe("mod_recovery_email", function ()
 				set_verified("b@example.org");
 				assert_cooling_off();
 				assert.is_nil(s.removed.data.alice);
+			end);
+
+			it("can't be skipped by removing an unverified replacement first", function ()
+				-- Found in review: set B (flagged), remove B, then set and verify C
+				set_verified("a@example.org");
+				env.set("alice", "b@example.org");
+				env.clear("alice");
+				set_verified("c@example.org");
+				assert_cooling_off();
 			end);
 
 			it("doesn't apply once the removal is older than the delay", function ()

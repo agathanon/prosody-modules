@@ -197,6 +197,9 @@ describe("mod_smtp_async", function ()
 			invalid({ to = "a@example.org\r\nRCPT TO:<b@example.org>"; subject = "s"; body = "b" });
 			invalid({ to = "<a@example.org>"; subject = "s"; body = "b" });
 			invalid({ to = "a@example.org"; from = "x y@example.com"; subject = "s"; body = "b" });
+			for _, c in ipairs({ ",", ";", ":", '"', "(", ")", "[", "]", "\\" }) do
+				invalid({ to = "a"..c.."b@example.org"; subject = "s"; body = "b" });
+			end
 		end);
 
 		it("rejects header injection", function ()
@@ -325,6 +328,32 @@ describe("mod_smtp_async", function ()
 			session:receive("220 hi\r\n");
 			session:disconnected("closed");
 			assert.is_true(result.err.temporary);
+		end);
+
+		it("refuses data sent after the STARTTLS reply before encryption", function ()
+			-- complete reply in the same packet (response injection)
+			local session, log, result = new_test_session(starttls_opts);
+			session:connected(false);
+			session:receive("220 hi\r\n"..ehlo_tls.."220 Go ahead\r\n250 injected\r\n");
+			assert.is_false(result.ok);
+			assert.is_false(result.err.temporary);
+			assert.equal("unexpected data after STARTTLS reply", result.err.text);
+			for _, entry in ipairs(log) do assert.not_equal("<starttls>", entry); end
+
+			-- a partial line in the same packet
+			session, log, result = new_test_session(starttls_opts);
+			session:connected(false);
+			session:receive("220 hi\r\n"..ehlo_tls.."220 Go ahead\r\n250 inj");
+			assert.equal("unexpected data after STARTTLS reply", result.err.text);
+			for _, entry in ipairs(log) do assert.not_equal("<starttls>", entry); end
+
+			-- anything arriving while the handshake is in progress
+			session, log, result = new_test_session(starttls_opts);
+			session:connected(false);
+			session:receive("220 hi\r\n"..ehlo_tls.."220 Go ahead\r\n");
+			assert.equal("<starttls>", log[#log]);
+			session:receive("250 injected\r\n");
+			assert.equal("unexpected data during STARTTLS", result.err.text);
 		end);
 
 		it("treats TLS handshake failures as permanent", function ()

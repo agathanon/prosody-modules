@@ -1,7 +1,10 @@
 # Security controls: recovery email and password reset modules
 
 Written 2026-10-04 for security review, against `master` at commit
-`a8587ab` (after phase 3 was merged).
+`a8587ab` (after phase 3 was merged). Updated the same day after an
+external review: the fixes it prompted are on the `fix/security-review`
+branch, and this version describes the code with those fixes. See
+[section 10](#10-review-history).
 
 This document describes the security controls in four Prosody 13
 modules that together provide self-service password reset through a
@@ -21,6 +24,7 @@ the code is authoritative and the disagreement is a finding.
 7. [Security testing performed](#7-security-testing-performed)
 8. [Suggested review focus](#8-suggested-review-focus)
 9. [References](#9-references)
+10. [Review history](#10-review-history)
 
 ## 1. Scope
 
@@ -92,8 +96,6 @@ and the deployment (TLS termination, reverse proxy, OS).
   have a recovery address (account enumeration).
 - Someone with brief access to a logged-in session (e.g. an unlocked
   device) silently making their own address the recovery address.
-- Using the modules to send email to arbitrary addresses (spam/harassment
-  relay).
 - Guessing verification codes or reset tokens.
 - Interception or tampering of email submission (TLS downgrade, wrong
   certificate).
@@ -102,6 +104,16 @@ and the deployment (TLS termination, reverse proxy, OS).
 - Records outliving their account and applying to a new account with
   the same username.
 - Blocking Prosody's event loop (availability) while sending email.
+
+**Limited, but not prevented:**
+
+- Using the modules to send email to addresses the sender doesn't
+  control. Notices only go to verified addresses, but verification
+  emails go to whatever address a user enters, rate limited per account
+  only (R18).
+- Denial of recovery: someone with a session can remove or replace the
+  verified address (R20), and anyone can use up an account's reset
+  requests for an hour (R21).
 
 **Explicitly not defended against** (by design or out of scope):
 
@@ -134,6 +146,8 @@ and the deployment (TLS termination, reverse proxy, OS).
 - No ASCII whitespace or control characters, no C1 controls, and no
   Unicode spaces or invisible characters (U+00A0, U+1680, U+2000–U+200B,
   U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF).
+- None of RFC 5322's special characters `( ) < > [ ] : ; \ , "`
+  (only valid inside quoted strings, which aren't supported).
 - Exactly one `@`; domain needs a dot and no empty labels.
 - Domain lowercased; local part kept as entered.
 
@@ -159,9 +173,12 @@ most 1024 bytes, both fields equal; plus `mod_password_policy`'s
 
 **Outgoing email** (`mod_smtp_async`: `validate_message()`):
 
-- `to` and `from` must be valid UTF-8 and match
-  `^[^%s%c<>@]+@[^%s%c<>@]+$`, so no spaces, control characters,
-  angle brackets or second `@`.
+- `to` and `from` must be valid UTF-8 with exactly one `@`, and no
+  spaces, control characters or RFC 5322 specials
+  (`( ) < > [ ] : ; \ , "`), so an address can't alter SMTP commands or
+  the meaning of the `To`/`From` headers. This matches
+  `mod_recovery_email`'s rules, so every address it accepts can be sent
+  to.
 - Subject: valid UTF-8 and no CR or LF.
 - Body: valid UTF-8.
 - Extra header names: `^%a[%w%-]*$` and not one of the headers the
@@ -193,7 +210,9 @@ most 1024 bytes, both fields equal; plus `mod_password_policy`'s
   (`create_token()`).
 - Valid for 1 hour (`recovery_email_reset_link_lifetime`); single use
   (deleted on success); at most one pending link per user (a new request
-  replaces it).
+  replaces it, but only once the new link is fully recorded). If the
+  per-user record can't be written, the new token is deleted, so no link
+  exists that couldn't be cancelled.
 - Bound to the account and to the address it was sent to: the link is
   refused if `get_reset_address()` no longer returns that address, or the
   account is disabled or gone (`get_reset()`, `post_reset()`).
@@ -219,9 +238,9 @@ stored, logged or echoed back in pages.
 | Disabled accounts (including those pending deletion) get no reset | `reset_address()` in `mod_recovery_email_reset` checks `usermanager.user_is_enabled()` |
 | The owner is warned when a verified address is replaced or removed | `mod_recovery_email_notify`: "replaced" and "removed" notices to the previous **verified** address, saying whether an admin made the change |
 | Optional cooling-off period | `recovery_email_reset_delay` (off by default): an address that took the place of a verified one can't be used for resets until the delay has passed after verification (`replaced_verified`, `reset_allowed_after`) |
-| Cooling-off can't be skipped by removing first | `clear()` of a verified address records the time in the `recovery_email_removed` store; `replaces_verified()` applies the delay to an address set within the delay after that |
+| Cooling-off can't be skipped by removing first | `clear()` of a verified address, or of one flagged `replaced_verified`, records the time in the `recovery_email_removed` store; `replaces_verified()` applies the delay to an address set within the delay after that. (The second case was added after review: see F1.) |
 | The owner is told when the password is reset | "reset_done" email to the verified address |
-| A reset ends other sessions | Prosody core: `usermanager.set_password()` fires `user-password-changed`, and `mod_c2s` disconnects all of the user's sessions; `mod_tokenauth` invalidates grants issued before the change |
+| A reset ends other sessions | Prosody core: `usermanager.set_password()` fires `user-password-changed`, and `mod_c2s` disconnects all of the user's sessions (any auth backend). `mod_tokenauth` invalidates grants issued before the change **only if the auth backend reports `password_updated`**: `internal_hashed` does, other backends may not (R11) |
 | Records can't outlive their account | Record stores the account's `created` time (`account_created`); `get()` deletes and ignores records whose time doesn't match the current account; records also removed on `user-deleted` and `user-registered`, and by Prosody's purge of user data on deletion |
 | Links can't be redirected by request headers | The link's base URL comes from configuration (`module:http_url()`, computed at load), never from the request's `Host` header |
 
@@ -237,8 +256,9 @@ stored, logged or echoed back in pages.
   the ad-hoc form. It isn't in vCards, PEP, presence or disco.
 - Change notices name the account, time and who made the change, but not
   the new address.
-- Notices go only to addresses that were verified, so typing someone
-  else's address can trigger at most the single verification email.
+- Notices go only to addresses that were verified. An address that was
+  only typed in receives verification emails, at most about 8 an hour per
+  account (R18).
 - Logs show addresses masked (`a***@example.org`) in all four modules.
 - `mod_smtp_async` keeps only the SMTP reply code and enhanced status
   code in errors and logs, never the server's text, which may contain
@@ -255,6 +275,13 @@ See [section 5](#5-limits-and-lifetimes) for values. Notes:
   consulted, and password submissions have their own per-IP limit.
 - Per-IP limits use `request.ip`, which `mod_http` derives from
   `X-Forwarded-For` only for proxies listed in `trusted_proxies`.
+- IPv6 addresses are limited per /64 (a client usually controls a whole
+  /64), and IPv4-mapped IPv6 addresses as their IPv4 address
+  (`client_key()`).
+- If requests carry `X-Forwarded-For` from an address `mod_http` didn't
+  trust, the module logs a warning once (`check_proxy()`): behind a proxy
+  missing from `trusted_proxies`, every visitor shares one per-IP limit
+  (R19).
 - Shell commands are not rate limited (admins are trusted).
 
 ### 4.7 Web pages (`mod_recovery_email_reset`)
@@ -281,6 +308,7 @@ See [section 5](#5-limits-and-lifetimes) for values. Notes:
 | --- | --- |
 | Encryption required by default | `smtp_async_tls = "starttls"` (default) fails if the server doesn't offer STARTTLS; it never falls back to plain text. `"tls"` uses implicit TLS from the start |
 | Server certificate verified | TLS context from `certmanager.create_context()` with `verify = "peer"` (and optional `smtp_async_cafile`); after the handshake, `ssl_peerverification()` (chain) and `util.x509.verify_identity()` against `smtp_async_server` (name), as Prosody's own `net.http` does. LuaSec additionally aborts handshakes with untrusted chains |
+| No STARTTLS injection | Any data after the server's STARTTLS reply (a further reply or a partial line in the same packet) or during the handshake fails the session, and a fresh reply reader is used once TLS is up, so nothing received unencrypted is read as if it came over TLS (`handle_reply()`, `receive()`, `tls_ready()`). (Hardened after review: see F3.) |
 | Certificate failures are permanent | Not retried (`session:disconnected()` treats handshake failures as permanent) |
 | Turning verification off is loud | `smtp_async_verify_certificate = false` logs a warning at startup |
 | Credentials only over TLS | `authenticate()` refuses AUTH without TLS; configuring credentials with `smtp_async_tls = "none"` makes every send fail (fail closed), with an error at startup |
@@ -329,8 +357,8 @@ itself logs at `debug` level.
 | Code lifetime | 24 hours | `recovery_email_code_lifetime` | `mod_recovery_email` |
 | Cooling-off after replacing a verified address | Off | `recovery_email_reset_delay` | `mod_recovery_email` |
 | Reset requests per JID | 3/hour | `recovery_email_reset_requests_per_jid` | `mod_recovery_email_reset` |
-| Reset requests per IP | 10/hour | `recovery_email_reset_requests_per_ip` | `mod_recovery_email_reset` |
-| Password submissions per IP | 10/hour | (same option) | `mod_recovery_email_reset` |
+| Reset requests per IP (IPv6: per /64) | 10/hour | `recovery_email_reset_requests_per_ip` | `mod_recovery_email_reset` |
+| Password submissions per IP (IPv6: per /64) | 10/hour | (same option) | `mod_recovery_email_reset` |
 | Reset link lifetime | 1 hour | `recovery_email_reset_link_lifetime` | `mod_recovery_email_reset` |
 | Minimum new password length | 8 characters | `recovery_email_reset_min_password_length` | `mod_recovery_email_reset` |
 | Maximum new password size | 1024 bytes | No | `mod_recovery_email_reset` |
@@ -352,26 +380,30 @@ Severity is the author's assessment, for reviewers to challenge.
 | R2 | **Cooling-off is off by default**, so R1's window is open unless an admin configures `recovery_email_reset_delay`. | Medium | Accepted (decided in planning). Documented in `mod_recovery_email`'s README. |
 | R3 | **Prosody's debug logging exposes secrets.** Prosody's HTTP server logs request paths at `debug`, so reset tokens appear in debug logs. If the optional `mod_stanza_debug` is loaded, full stanzas, including codes and addresses entered in the ad-hoc form, are logged too. (By default Prosody logs only stanzas' top tags, which contain neither.) | Low–Medium (depends on log access) | Documented for reset tokens in `mod_recovery_email_reset`'s README; tokens are single-use and expire in an hour. `mod_stanza_debug` isn't documented yet. |
 | R4 | **Codes can be recovered from storage.** With read access to storage, a 6-digit code's salted hash can be brute-forced instantly. | Low (requires storage access) | Accepted; codes are short-lived; documented. |
-| R5 | **Rate-limit state is evictable and volatile.** Limits are in memory (reset on restart), and the web limits keep at most 4096 keys each. An attacker with many IP addresses could push a victim's per-JID entry out of the cache and so exceed 3 reset emails/hour to the victim's mailbox (email bombing). This doesn't enable takeover. | Low | Not mitigated beyond per-IP limits (about 410 IPs needed to fill the cache within an hour). Possible improvement: per-JID limits in storage, or a global limit. |
-| R6 | **Response timing differs.** After the eligibility checks, an eligible reset request does extra work before responding: a storage read, two or three storage writes, firing an event, and rendering and queuing an email. The page content is identical, but timing could distinguish eligible from ineligible requests in principle, particularly with SQL storage. `mod_recovery_email_reset`'s README calls this "one storage write", which understates it. | Low | Not mitigated. Possible improvement: defer token creation and email to a timer so all requests return after the same work; correct the README. |
-| R7 | **Validators disagree.** `mod_recovery_email` accepts and stores addresses containing `<` or `>` (e.g. `a<b@example.org`), which `mod_smtp_async` refuses to send to. Such an address can never be verified. | Low (fails closed, no injection) | Found while writing this report. Fix: reject `<` and `>` in `validate()` (and arguably other characters outside RFC 5322's unquoted local part). |
+| R5 | **Rate-limit state is evictable and volatile.** Limits are in memory (reset on restart), and the web limits keep at most 4096 keys each. An attacker controlling enough addresses can push a victim's per-JID entry out of the cache and so exceed 3 reset emails/hour to the victim's mailbox (email bombing). Since review, IPv6 clients are limited per /64 (F2), but about 410 /64s are still enough to fill the cache within an hour, and a single IPv6 /48 contains 65,536. This doesn't enable takeover. | Low | Partly mitigated (F2). Possible improvements: per-JID limits in storage, a larger cache, or an additional per-/48 limit. |
+| R6 | **Response timing differs.** After the eligibility checks, an eligible reset request does extra work before responding: a storage read, two or three storage writes, firing an event, and rendering and queuing an email. The page content is identical, but timing could distinguish eligible from ineligible requests in principle, particularly with SQL storage. | Low | Not mitigated; now described accurately in `mod_recovery_email_reset`'s README (F6). Possible improvement: defer token creation and email to a timer so all requests return after the same work. |
+| R7 | **Validators disagreed.** `mod_recovery_email` accepted addresses containing `<` or `>`, which `mod_smtp_async` refused to send to, so such an address could never be verified. | Low (failed closed) | **Fixed** (F5): both modules now reject RFC 5322 specials. |
 | R8 | **The SMTP queue is unbounded and volatile.** `mod_smtp_async` queues messages in memory without a size cap, and loses them on restart. Volume is bounded indirectly by the callers' rate limits. | Low | Accepted (documented). Possible improvement: a queue size cap; a persistent queue was deferred. |
 | R9 | **Anyone can trigger reset emails for any JID** (up to 3/hour per JID, more under R5). The email tells recipients to ignore it if unexpected. | Low (nuisance) | Accepted; no CAPTCHA (out of scope). |
 | R10 | **Weak default password policy:** only a minimum of 8 characters, unless `mod_password_policy` is loaded. | Low–Medium (deployment-dependent) | Documented; admins can load `mod_password_policy`. |
-| R11 | **Some authentication backends** (e.g. LDAP) don't report account creation times, so a record can't be tied to a specific account; accounts deleted outside Prosody leave records that a re-created account would inherit. | Medium for such deployments | Documented in `mod_recovery_email`'s README (admins should `recovery clear` when removing accounts externally). |
+| R11 | **Authentication backends without account metadata** (e.g. LDAP). If the backend doesn't report account creation times, a record can't be tied to a specific account, and accounts deleted outside Prosody leave records that a re-created account would inherit. If it doesn't report `password_updated`, a reset doesn't invalidate older app tokens (`mod_tokenauth` grants); sessions are still disconnected. | Medium for such deployments | Account records: documented in `mod_recovery_email`'s README (admins should `recovery clear` when removing accounts externally). App tokens: documented in `mod_recovery_email_reset`'s README. |
 | R12 | **HTTPS isn't enforced** for reset links; only a startup warning is logged. | Low (misconfiguration) | Documented; warning at startup. |
 | R13 | **The reset token is in the URL**, so it can end up in browser history and in reverse proxy logs. | Low | Single use, 1-hour lifetime, `no-referrer`, `no-store`. |
 | R14 | **Verifying an address you don't control:** a user (or session holder) can try about 40 codes/hour (8 codes × 5 attempts), roughly 1 in 25,000 per hour of verifying an address without receiving its email. The only effect is a verified address the account owner doesn't control, which harms only that account. | Info | Accepted. |
 | R15 | **Internationalized domains** aren't normalized (`ü.example` ≠ `xn--tda.example`), and local-part case is kept, so the same mailbox can be stored in different forms. | Info | Documented. |
 | R16 | **Subjects may contain control characters other than CR/LF** (`mod_smtp_async` only rejects CR and LF in subjects). Subjects come from admin-configured templates plus the JID, which can't contain control characters. | Info | Possible hardening: reject all control characters in subjects. |
 | R17 | **Test and dev code is insecure on purpose.** `test/plugins/mod_test_recovery_codes.lua` delivers codes over XMPP, defeating email verification; dev configs use plain SMTP/HTTP. | Info | Kept under `test/` and `dev/`, not as top-level `mod_*` directories; must never be deployed. |
+| R18 | **Verification emails to addresses the sender doesn't control.** One account can send about 8 verification emails an hour to any address (5 address changes + 3 resends), and there is no limit across accounts. The account name appears in the email's subject and body, so on a server with open registration the name itself can carry a short message (e.g. `visit-evil-example-com@host`). | Low–Medium (depends on registration policy) | Rate limited per account only. Possible improvements: a per-host limit on verification emails; limits per recipient address. |
+| R19 | **Reverse proxy without `trusted_proxies`.** Every visitor appears to come from the proxy, so all share one per-IP limit: 10 requests an hour then takes the reset page offline for everyone. | Low–Medium (misconfiguration) | Documented in the README; a warning is logged once when `X-Forwarded-For` arrives from an untrusted address (F2). Note: a client can trigger that warning by sending the header directly; it's only a log line. |
+| R20 | **The old address stops working immediately.** `set()` replaces the verified address as soon as a new one is entered, before it's verified, so someone with a session can disable the owner's recovery without verifying anything. | Low (part of R1) | Accepted as part of R1: the session holder could equally remove the address outright, so keeping the old address until the new one is verified wouldn't close this on its own. The notice to the previous verified address is the mitigation. |
+| R21 | **Anyone can use up an account's reset requests.** Three requests an hour for a victim's JID make the victim's own request get "Too many requests". | Low | The victim still receives those emails, and the most recent link works, so a reset is delayed rather than blocked. |
 
 ## 7. Security testing performed
 
-Automated (all passing on `master` at `a8587ab`):
+Automated (all passing on the `fix/security-review` branch, after the fixes in section 10):
 
-- **Unit tests (busted), 124 total:** 60 for `mod_recovery_email`, 12 for
-  `mod_recovery_email_notify`, 20 for `mod_recovery_email_reset`, 32 for
+- **Unit tests (busted), 130 total:** 62 for `mod_recovery_email`, 12 for
+  `mod_recovery_email_notify`, 23 for `mod_recovery_email_reset`, 33 for
   `mod_smtp_async`. Security-relevant coverage includes: address
   validation (control characters, Unicode spaces, invalid UTF-8,
   lengths); code uniformity, hashing, expiry, attempt limits and
@@ -383,11 +415,14 @@ Automated (all passing on `master` at `a8587ab`):
   and enabled account; password rules; SMTP header and command injection
   attempts; STARTTLS absence; auth refused without TLS; handshake
   failures treated as permanent; no server text, passwords or content in
-  logs.
+  logs. Since review: the cooling-off bypass sequence (F1), per-/64
+  limits and the proxy warning (F2), data around the STARTTLS upgrade
+  (F3), storage failures when creating links (F4), and RFC 5322 specials
+  in both validators (F5).
 - **Mutation checks:** for several controls, the protecting code was
   temporarily disabled to confirm a test fails (role-based permission vs.
   host-only check; code verification; remove-then-add cooling-off; token
-  binding to the current address).
+  binding to the current address; and each of the fixes F1, F3 and F4).
 - **Scansion (XMPP) tests:** access control for remote and anonymous
   users, the verification flow, attempt exhaustion; on internal and SQL
   storage.
@@ -408,6 +443,10 @@ review by a third party, testing behind a real reverse proxy, testing
 with external authentication backends.
 
 ## 8. Suggested review focus
+
+The first external review answered items 1 and 3 (no differences other
+than timing; no practical race with Prosody's synchronous storage) and
+found a bypass under item 2 (F1). They remain listed for further reviews.
 
 1. Whether the identical-response claim (4.5) holds for every code path
    in `handle_request()`, including storage errors and rate limits, and
@@ -439,3 +478,26 @@ with external authentication backends.
   invalidated after a password change), `plugins/mod_http.lua`
   (`request.ip`, `trusted_proxies`, `http_url`, CORS defaults),
   `core/stanza_router.lua` (debug logs only top tags).
+
+## 10. Review history
+
+**External review 1 (2026-10-04).** An independent review of the first
+version of this document (against `a8587ab`) confirmed several controls
+and found the following. All code fixes are on the `fix/security-review`
+branch, each with a regression test.
+
+| ID | Finding | Fix |
+| --- | --- | --- |
+| F1 | **Cooling-off bypass.** With `recovery_email_reset_delay` set: owner has verified A; set B (flagged); remove B (unverified, so no removal marker was written); set and verify C, which was usable for resets immediately. | `ab8d4c7`: `clear()` also records removals of addresses flagged `replaced_verified`. |
+| F2 | **Per-IP limits were weak over IPv6** (one client controls a whole /64), and a proxy missing from `trusted_proxies` makes all visitors share one limit. | `883a50c`: IPv6 limited per /64, IPv4-mapped addresses as IPv4; warning when `X-Forwarded-For` arrives untrusted. R5 remains in part, R19 added. |
+| F3 | **STARTTLS buffer.** A partial line received unencrypted survived the TLS upgrade in the reply reader. (Complete pipelined replies already failed closed.) | `0373920`: data after the STARTTLS reply or during the handshake fails the session; fresh reader after TLS. |
+| F4 | **Untracked reset tokens.** A failed write of the per-user record left a link that couldn't be cancelled early. | `3d82837`: the token is deleted and the request fails; the previous link is replaced only after success. |
+| F5 | **Validators disagreed** (R7, found while writing the first version). | `46a5927`, `e5cd0cb`: both modules reject RFC 5322 specials. |
+| F6 | **README understated the timing difference** (R6, found while writing the first version). | `3e640d9`: README corrected. |
+
+The review also corrected three claims in the first version, now fixed in
+this document: verification emails to unverified addresses aren't
+limited to one (4.5, R18); `mod_tokenauth` only invalidates app tokens
+when the auth backend reports `password_updated` (4.4, R11); and the R5
+estimate didn't account for IPv6. It identified R19, R20 and R21 as
+missing risks (R21 was added by the author while assessing the review).

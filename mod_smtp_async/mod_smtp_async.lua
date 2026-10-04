@@ -32,9 +32,13 @@ local function parse_reply_line(line)
 	return tonumber(code), sep == "-", text;
 end
 
--- Returns a function that is fed incoming data and returns complete replies
+-- Returns a function that is fed incoming data and returns complete replies,
+-- and a function that tells whether incomplete data is waiting
 local function new_reply_reader()
 	local buffer, lines = "", {};
+	local function pending()
+		return buffer ~= "" or #lines > 0;
+	end
 	return function (data)
 		buffer = buffer..data;
 		local replies = {};
@@ -56,7 +60,7 @@ local function new_reply_reader()
 			return nil, "reply line too long";
 		end
 		return replies;
-	end
+	end, pending;
 end
 
 -- EHLO reply lines after the first are "KEYWORD params"
@@ -131,8 +135,10 @@ local function valid_utf8(s)
 	return type(s) == "string" and utf8.len(s) ~= nil;
 end
 
+-- No spaces, control characters or RFC 5322 specials (quoted local parts
+-- aren't supported), so an address can't alter SMTP commands or headers
 local function valid_address(address)
-	return valid_utf8(address) and address:match("^[^%s%c<>@]+@[^%s%c<>@]+$") ~= nil;
+	return valid_utf8(address) and address:match('^[^%s%c@()<>%[%]:;\\,"]+@[^%s%c@()<>%[%]:;\\,"]+$') ~= nil;
 end
 
 -- Returns a checked copy of the message, or nil and a reason
@@ -200,10 +206,11 @@ local session_methods = {};
 local session_mt = { __index = session_methods };
 
 local function new_session(message, data, opts, transport, on_done)
+	local read, read_pending = new_reply_reader();
 	return setmetatable({
 		message = message; data = data; opts = opts; transport = transport; on_done = on_done;
 		state = "connecting"; tls_active = false; caps = {}; progress = 0;
-		read = new_reply_reader();
+		read = read; read_pending = read_pending;
 	}, session_mt);
 end
 
@@ -239,6 +246,9 @@ function session_methods:tls_ready()
 	if self.state ~= "tls-handshake" then return; end
 	self.progress = self.progress + 1;
 	self.tls_active = true;
+	-- Start afresh: nothing received before encryption may be read as if it
+	-- came over TLS
+	self.read, self.read_pending = new_reply_reader();
 	self:send("ehlo", "EHLO "..self.opts.helo);
 end
 
@@ -256,14 +266,18 @@ end
 
 function session_methods:receive(data)
 	if self.state == "done" then return; end
+	if self.state == "tls-handshake" then
+		-- The server must say nothing more until TLS is established
+		return self:fail(false, "unexpected data during STARTTLS");
+	end
 	local replies, err = self.read(data);
 	if not replies then
 		return self:fail(false, err);
 	end
-	for _, reply in ipairs(replies) do
+	for i, reply in ipairs(replies) do
 		if self.state == "done" then return; end
 		self.progress = self.progress + 1;
-		self:handle_reply(reply);
+		self:handle_reply(reply, i < #replies);
 	end
 end
 
@@ -280,7 +294,8 @@ local expected_codes = {
 	sent = { [250] = true };
 };
 
-function session_methods:handle_reply(reply)
+-- more: whether further replies arrived with this one
+function session_methods:handle_reply(reply, more)
 	local state, code = self.state, reply.code;
 	module:log("debug", "SMTP reply in state %s: %d", state, code);
 	local expected = expected_codes[state];
@@ -307,6 +322,11 @@ function session_methods:handle_reply(reply)
 			self:authenticate();
 		end
 	elseif state == "starttls" then
+		-- Anything sent after this reply arrived unencrypted: don't let it be
+		-- mistaken for data received over TLS (STARTTLS injection)
+		if more or self.read_pending() then
+			return self:fail(false, "unexpected data after STARTTLS reply");
+		end
 		self.state = "tls-handshake";
 		self.transport.starttls();
 	elseif state == "auth-login-user" then
