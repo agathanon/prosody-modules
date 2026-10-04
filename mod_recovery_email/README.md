@@ -18,9 +18,10 @@ to it. This module creates and checks the codes; it does not send email
 itself. [mod_recovery_email_notify] sends the codes and change notices,
 using [mod_smtp_async].
 
-This is part of a self-service password reset feature. Nothing uses the
-address for password resets yet. Other modules can build on it through
-its API and events, described below.
+This is part of a self-service password reset feature:
+[mod_recovery_email_reset] lets users who have forgotten their password
+reset it through their verified address. Other modules can build on this
+module through its API and events, described below.
 
 Usage
 =====
@@ -70,8 +71,30 @@ Configuration
 =============
 
   Option                           Default        Description
-  -------------------------------- -------------- -----------------------------------------
+  -------------------------------- -------------- ------------------------------------------------------------------
   `recovery_email_code_lifetime`   `"24 hours"`   How long a verification code stays valid
+  `recovery_email_reset_delay`     `0` (off)      Cooling-off period before a replacement address can be used for resets
+
+Cooling-off period
+------------------
+
+Changing the address doesn't require the account's password, so someone
+with brief access to a logged-in session could replace a verified
+address with their own. The previous address is warned by
+[mod_recovery_email_notify], and `recovery_email_reset_delay` can add a
+second line of defense: an address that took the place of a verified one
+can't be used for password resets until the delay has passed after it is
+verified.
+
+```lua
+recovery_email_reset_delay = "7 days"
+```
+
+The delay applies when the new address replaced a verified address
+(directly, or through unverified addresses in between), or was set within
+the delay after a verified address was removed, so removing and re-adding
+can't be used to skip it. It doesn't apply to a user's first address, or
+to one that replaced an address that was never verified.
 
 Access to the command is controlled by the `adhoc:recovery-email`
 permission, which is granted to `prosody:registered` by default. Anonymous
@@ -96,7 +119,8 @@ Addresses set from the shell are validated and stored as `unverified`,
 like any other change, and a verification code is sent to them; the user
 enters it in the ad-hoc command. The shell is not rate limited, and
 changes made from it are marked "(via shell)" in the log. `show` also
-reports whether a code is pending, but never shows the code.
+reports whether a code is pending (but never shows the code), and whether
+the address can be used for password resets.
 
 Server logs only ever show masked addresses (e.g. `s***@example.org`).
 
@@ -113,6 +137,7 @@ functions. All of them take the local username on the current host.
   `clear(username, source)`                `true, "removed"` or `true, "absent"`; `nil, code, message` on error
   `verify(username, code)`                 `true, "verified"`; `nil, code, message` on error
   `resend_verification(username, source)`  `true`; `nil, code, message` on error
+  `get_reset_address(username)`            The address to use for a password reset, or `nil, reason`
   `validate(email)`                        The normalized address, or `nil, message`
 
 When `set()` returns `"changed"`, verification has started and a
@@ -122,6 +147,12 @@ remain), `resource-constraint` when the code has expired or used up its
 attempts, `conflict` when the address is already verified, and
 `item-not-found` when there is no address.
 
+`get_reset_address()` returns the address only if it is verified and
+outside any cooling-off period. Otherwise the reason is `"none"` (no
+address), `"unverified"`, `"cooling-off"` (with the time it ends as a
+third value), or `"error"` if storage failed. It doesn't check whether
+the account is enabled.
+
 `source` is optional: a short label such as `"shell"` that is added to
 the log line for the change, e.g. "(via shell)". Changes made by users
 through the ad-hoc command have none.
@@ -129,7 +160,8 @@ through the ad-hoc command have none.
 A record has the fields `version`, `email`, `status` (`"unverified"` or
 `"verified"`), `created_at`, `updated_at`, `account_created` and
 `verified_at`, plus `verify_token_hash`, `verify_expires` and
-`verify_attempts` while a code is pending.
+`verify_attempts` while a code is pending, and `replaced_verified` and
+`reset_allowed_after` for the cooling-off period.
 
 The module fires these events on the host:
 
@@ -178,7 +210,8 @@ Limitations
 -   **Changing the address doesn't require the password.** Someone with
     brief access to a logged-in session could set and verify their own
     address. [mod_recovery_email_notify] warns the previous verified
-    address when this happens.
+    address when this happens, and the optional cooling-off period (see
+    above) delays when the new address can be used for resets.
 -   **A 6-digit code is only as safe as its limits.** Someone who can read
     the server's storage could find a pending code from its hash; the
     24-hour lifetime and 5-attempt limit are what protect codes in normal
