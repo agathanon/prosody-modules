@@ -125,6 +125,11 @@ Limitations
     path. On a server logging at `debug` level, anyone who can read the
     logs while a link is valid could use it. Links are single-use and
     expire after an hour, so a token in an old log is useless.
+-   **App tokens and other authentication backends.** Prosody only
+    invalidates older app tokens (e.g. OAuth grants) after a password
+    change if the authentication backend reports when the password
+    changed; `internal_hashed` does, others may not. Sessions are
+    disconnected either way.
 -   **Rate limits are kept in memory.** They reset when the module is
     reloaded or Prosody restarts.
 -   **Pages are in English.** They can be translated by replacing the
