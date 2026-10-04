@@ -2,7 +2,7 @@
 labels:
 - 'Stage-Alpha'
 summary: 'Send the emails for mod_recovery_email'
-...
+---
 
 Introduction
 ============
@@ -34,24 +34,27 @@ Usage
 =====
 
 ```lua
-VirtualHost "example.com"
-    modules_enabled = { "recovery_email", "recovery_email_notify" }
-
--- mod_smtp_async settings, e.g.:
+-- mod_smtp_async settings (see its README), e.g. in the global section:
 smtp_async_server = "smtp.example.net"
 smtp_async_username = "prosody@example.com"
 smtp_async_password = "..."
+smtp_async_from = "noreply@example.com"   -- an address the account may send as
+
+VirtualHost "example.com"
+    modules_enabled = { "recovery_email", "recovery_email_notify" }
 ```
 
 [mod_recovery_email] and [mod_smtp_async] are loaded automatically.
+Emails are sent from `smtp_async_from` unless `recovery_email_from` is
+set.
 
 Configuration
 =============
 
-  Option                      Default                       Description
-  --------------------------- ----------------------------- ---------------------------------------------------
-  `recovery_email_from`       `smtp_async_from`             Sender address of the emails, if different from mod_smtp_async's
-  `recovery_email_messages`   built-in English texts        Subjects and bodies to use instead (see below)
+| Option | Default | Description |
+| --- | --- | --- |
+| `recovery_email_from` | `smtp_async_from` | Sender address of the emails, if different from mod_smtp_async's |
+| `recovery_email_messages` | built-in English texts | Subjects and bodies to use instead (see below) |
 
 If Prosody's `contact_info` option has an `admin` entry (as used by
 mod_server_contact_info), the notices tell the reader to contact those
@@ -82,16 +85,16 @@ The keys are `verification`, `replaced`, `removed`, `reset` and
 given keeps its built-in text. Messages are plain text. These
 placeholders are filled in:
 
-  Placeholder      Value
-  ---------------- ----------------------------------------------------------------
-  `{jid}`          The account, e.g. `user@example.com`
-  `{host}`         The host, e.g. `example.com`
-  `{code}`         The verification code (`verification` only)
-  `{url}`          The password reset link (`reset` only)
-  `{expires}`      When the code or link expires, in UTC (`verification` and `reset` only)
-  `{changed_by}`   "from the account" or "by a server administrator" (`replaced` and `removed` only)
-  `{time}`         When the change or reset happened, in UTC (`replaced`, `removed` and `reset_done` only)
-  `{contact}`      The admin contact addresses from `contact_info`, if any
+| Placeholder | Value |
+| --- | --- |
+| `{jid}` | The account, e.g. `user@example.com` |
+| `{host}` | The host, e.g. `example.com` |
+| `{code}` | The verification code (`verification` only) |
+| `{url}` | The password reset link (`reset` only) |
+| `{expires}` | When the code or link expires, in UTC (`verification` and `reset` only) |
+| `{changed_by}` | "from the account" or "by a server administrator" (`replaced` and `removed` only) |
+| `{time}` | When the change or reset happened, in UTC (`replaced`, `removed` and `reset_done` only) |
+| `{contact}` | The admin contact addresses from `contact_info`, if any |
 
 `{contact&text}` shows `text` only when a contact is configured, and
 `{contact~text}` only when it isn't.
@@ -106,7 +109,7 @@ logged.
 Compatibility
 =============
 
-  Prosody Version   Status
-  ----------------- ---------------------------------------------
-  13.0              Works
-  0.12              Does not work (requires mod_recovery_email)
+| Prosody Version | Status |
+| --- | --- |
+| 13.0 | Works |
+| 0.12 | Does not work (requires mod_recovery_email) |
