@@ -197,6 +197,9 @@ describe("mod_smtp_async", function ()
 			invalid({ to = "a@example.org\r\nRCPT TO:<b@example.org>"; subject = "s"; body = "b" });
 			invalid({ to = "<a@example.org>"; subject = "s"; body = "b" });
 			invalid({ to = "a@example.org"; from = "x y@example.com"; subject = "s"; body = "b" });
+			for _, c in ipairs({ ",", ";", ":", '"', "(", ")", "[", "]", "\\" }) do
+				invalid({ to = "a"..c.."b@example.org"; subject = "s"; body = "b" });
+			end
 		end);
 
 		it("rejects header injection", function ()

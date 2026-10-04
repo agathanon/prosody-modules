@@ -135,8 +135,10 @@ local function valid_utf8(s)
 	return type(s) == "string" and utf8.len(s) ~= nil;
 end
 
+-- No spaces, control characters or RFC 5322 specials (quoted local parts
+-- aren't supported), so an address can't alter SMTP commands or headers
 local function valid_address(address)
-	return valid_utf8(address) and address:match("^[^%s%c<>@]+@[^%s%c<>@]+$") ~= nil;
+	return valid_utf8(address) and address:match('^[^%s%c@()<>%[%]:;\\,"]+@[^%s%c@()<>%[%]:;\\,"]+$') ~= nil;
 end
 
 -- Returns a checked copy of the message, or nil and a reason
