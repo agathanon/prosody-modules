@@ -2,7 +2,7 @@
 labels:
 - 'Stage-Alpha'
 summary: 'Send email over SMTP without blocking Prosody'
-...
+---
 
 Introduction
 ============
@@ -23,19 +23,19 @@ submission service, or a relay), never directly to recipients' servers.
 Configuration
 =============
 
-  Option                            Default                          Description
-  --------------------------------- -------------------------------- ------------------------------------------------------------------------
-  `smtp_async_server`               `"localhost"`                    Mail server hostname
-  `smtp_async_port`                 587, 465 or 25 (see below)       Port
-  `smtp_async_tls`                  `"starttls"`                     `"starttls"`, `"tls"` (implicit TLS) or `"none"`
-  `smtp_async_username`             none                             Username for authentication
-  `smtp_async_password`             none                             Password for authentication
-  `smtp_async_from`                 `"noreply@"` + the host          Default sender address
-  `smtp_async_helo`                 the host                         Name sent in `EHLO`
-  `smtp_async_cafile`               system default                   File of CA certificates to trust for the mail server, e.g. a private CA
-  `smtp_async_verify_certificate`   `true`                           Whether to verify the mail server's certificate
-  `smtp_async_timeout`              `"30s"`                          How long to wait for each step of the conversation
-  `smtp_async_retries`              `3`                              How many times to retry temporary failures, after 1, 5 and 15 minutes
+| Option | Default | Description |
+| --- | --- | --- |
+| `smtp_async_server` | `"localhost"` | Mail server hostname |
+| `smtp_async_port` | 587, 465 or 25 (see below) | Port |
+| `smtp_async_tls` | `"starttls"` | `"starttls"`, `"tls"` (implicit TLS) or `"none"` |
+| `smtp_async_username` | none | Username for authentication |
+| `smtp_async_password` | none | Password for authentication |
+| `smtp_async_from` | `"noreply@"` + the host | Default sender address |
+| `smtp_async_helo` | the host | Name sent in `EHLO` |
+| `smtp_async_cafile` | system default | File of CA certificates to trust for the mail server, e.g. a private CA |
+| `smtp_async_verify_certificate` | `true` | Whether to verify the mail server's certificate |
+| `smtp_async_timeout` | `"30s"` | How long to wait for each step of the conversation |
+| `smtp_async_retries` | `3` | How many times to retry temporary failures, after 1, 5 and 15 minutes |
 
 The default port depends on `smtp_async_tls`: 587 for `"starttls"`, 465
 for `"tls"`, and 25 for `"none"`.
@@ -44,10 +44,15 @@ A typical setup, using a mail provider's submission service:
 
 ```lua
 smtp_async_server = "smtp.example.net"
+smtp_async_tls = "tls"                    -- implicit TLS on port 465; omit for STARTTLS on 587
 smtp_async_username = "prosody@example.com"
 smtp_async_password = "..."
-smtp_async_from = "noreply@example.com"
+smtp_async_from = "noreply@example.com"   -- an address the account may send as
 ```
+
+Many mail providers refuse to send as an address the account doesn't
+own, with a `553` reply. Some cloud providers also block outbound SMTP
+ports (25, 465, 587); sending then times out.
 
 Options can be set globally or per VirtualHost.
 
@@ -59,6 +64,9 @@ Security
 -   The server's certificate is checked against `smtp_async_server`.
     Only turn this off with `smtp_async_verify_certificate = false` for
     testing.
+-   Anything the server sends around the STARTTLS upgrade, before
+    encryption is in place, ends the session instead of being mistaken
+    for encrypted data.
 -   Credentials are never sent without TLS: if a username is configured
     with `smtp_async_tls = "none"`, the module logs an error and every
     send fails.
@@ -68,7 +76,7 @@ Security
 API
 ===
 
-``` lua
+```lua
 local smtp = module:depends("smtp_async");
 
 smtp.send({
@@ -86,16 +94,17 @@ end);
 server accepts the message, and rejects with an error object if the
 message is invalid, the server refuses it, or all retries fail.
 
-  Field       Required   Description
-  ----------- ---------- --------------------------------------------------------
-  `to`        Yes        One recipient address
-  `subject`   Yes        Subject, UTF-8
-  `body`      Yes        Plain-text body, UTF-8
-  `from`      No         Sender address; defaults to `smtp_async_from`
-  `headers`   No         Table of extra headers, e.g. `{ ["Reply-To"] = "..." }`
+| Field | Required | Description |
+| --- | --- | --- |
+| `to` | Yes | One recipient address |
+| `subject` | Yes | Subject, UTF-8 |
+| `body` | Yes | Plain-text body, UTF-8 |
+| `from` | No | Sender address; defaults to `smtp_async_from` |
+| `headers` | No | Table of extra headers, e.g. `{ ["Reply-To"] = "..." }` |
 
-Values containing line breaks are rejected, so they can't be used to add
-headers or SMTP commands.
+Addresses must not contain spaces, control characters or any of
+`( ) < > [ ] : ; \ , "`, and other values must not contain line breaks,
+so nothing in a message can add headers, recipients or SMTP commands.
 
 Limitations
 ===========
@@ -112,7 +121,7 @@ Limitations
 Compatibility
 =============
 
-  Prosody Version   Status
-  ----------------- ---------------------------------------------
-  13.0              Works
-  0.12              Untested
+| Prosody Version | Status |
+| --- | --- |
+| 13.0 | Works |
+| 0.12 | Untested |

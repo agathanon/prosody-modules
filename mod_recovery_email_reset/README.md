@@ -2,7 +2,7 @@
 labels:
 - 'Stage-Alpha'
 summary: 'Reset a forgotten password through the recovery email address'
-...
+---
 
 Introduction
 ============
@@ -56,9 +56,9 @@ http_paths = {
 Prosody must be reachable over **HTTPS** at the address used in the
 links, which it takes from `http_external_url` if set (typically when
 Prosody is behind a reverse proxy). The module logs a warning if the
-links would use plain HTTP. See Prosody's HTTP documentation
-for setting up HTTPS and reverse proxies:
-https://prosody.im/doc/http
+links would use plain HTTP. See Prosody's
+[HTTP documentation](https://prosody.im/doc/http) for setting up HTTPS
+and reverse proxies.
 
 Behind a reverse proxy, also set `trusted_proxies` so that the per-IP
 rate limits see visitors' real addresses rather than the proxy's.
@@ -70,14 +70,14 @@ address that isn't in `trusted_proxies`.
 Configuration
 =============
 
-  Option                                       Default                   Description
-  -------------------------------------------- ------------------------- ------------------------------------------------------
-  `recovery_email_reset_link_lifetime`         `"1 hour"`                How long a reset link stays valid
-  `recovery_email_reset_requests_per_jid`      `3`                       Reset requests per account per hour
-  `recovery_email_reset_requests_per_ip`       `10`                      Requests, and password submissions, per IP (IPv6: per /64) per hour
-  `recovery_email_reset_min_password_length`   `8`                       Minimum length of the new password
-  `recovery_email_reset_site_name`             the host                  Name shown on the pages
-  `recovery_email_reset_template_path`         built-in templates        Directory with replacement page templates
+| Option | Default | Description |
+| --- | --- | --- |
+| `recovery_email_reset_link_lifetime` | `"1 hour"` | How long a reset link stays valid |
+| `recovery_email_reset_requests_per_jid` | `3` | Reset requests per account per hour |
+| `recovery_email_reset_requests_per_ip` | `10` | Requests, and password submissions, per IP (IPv6: per /64) per hour |
+| `recovery_email_reset_min_password_length` | `8` | Minimum length of the new password |
+| `recovery_email_reset_site_name` | the host | Name shown on the pages |
+| `recovery_email_reset_template_path` | built-in templates | Directory with replacement page templates |
 
 If [mod_password_policy] is loaded on the host, new passwords must also
 satisfy its rules.
@@ -143,9 +143,9 @@ Limitations
 Compatibility
 =============
 
-  Prosody Version   Status
-  ----------------- ---------------------------------------------
-  13.0              Works
-  0.12              Does not work (requires mod_recovery_email)
+| Prosody Version | Status |
+| --- | --- |
+| 13.0 | Works |
+| 0.12 | Does not work (requires mod_recovery_email) |
 
 Tested with Prosody's internal (file) storage and SQL storage (SQLite3).

@@ -2,7 +2,7 @@
 labels:
 - 'Stage-Alpha'
 summary: 'Let users store a private recovery email address'
-...
+---
 
 Introduction
 ============
@@ -57,24 +57,35 @@ code marks the address as verified.
 -   Changing the address starts verification again for the new address.
 -   Codes are stored only as salted hashes, and are never logged.
 
+Addresses and limits
+--------------------
+
 Addresses are trimmed, checked for basic validity (one `@`, a domain with
 a dot, no spaces or control characters, none of the characters
 `( ) < > [ ] : ; \ , "`, at most 254 bytes) and stored with the domain
-lowercased. Each user can make at most 5 changes in a burst,
-after which one more change becomes available every 12 minutes.
+lowercased. Each user can make at most 5 changes in a burst, after which
+one more change becomes available every 12 minutes.
 
 When an account is deleted, its record is removed with it. A record is
 also tied to the account's creation time where the authentication
 backend reports one (e.g. `internal_hashed`), so it never carries over to
 a new account that reuses the same username.
 
+Who can use it
+--------------
+
+Access to the command is controlled by the `adhoc:recovery-email`
+permission, which is granted to `prosody:registered` by default.
+Anonymous (`prosody:guest`) users and users of other hosts cannot see or
+use the command.
+
 Configuration
 =============
 
-  Option                           Default        Description
-  -------------------------------- -------------- ------------------------------------------------------------------
-  `recovery_email_code_lifetime`   `"24 hours"`   How long a verification code stays valid
-  `recovery_email_reset_delay`     `0` (off)      Cooling-off period before a replacement address can be used for resets
+| Option | Default | Description |
+| --- | --- | --- |
+| `recovery_email_code_lifetime` | `"24 hours"` | How long a verification code stays valid |
+| `recovery_email_reset_delay` | `0` (off) | Cooling-off period before a replacement address can be used for resets |
 
 Cooling-off period
 ------------------
@@ -96,11 +107,6 @@ The delay applies when the new address replaced a verified address
 the delay after a verified address was removed, so removing and re-adding
 can't be used to skip it. It doesn't apply to a user's first address, or
 to one that replaced an address that was never verified.
-
-Access to the command is controlled by the `adhoc:recovery-email`
-permission, which is granted to `prosody:registered` by default. Anonymous
-(`prosody:guest`) users and users of other hosts cannot see or use the
-command.
 
 Administration
 ==============
@@ -131,15 +137,15 @@ API
 Other modules can use `module:depends("recovery_email")` to access these
 functions. All of them take the local username on the current host.
 
-  Function                                 Returns
-  ---------------------------------------- ---------------------------------------------------------------
-  `get(username)`                          The record table, or `nil`
-  `set(username, email, source)`           `true, "changed"` or `true, "unchanged"`; `nil, code, message` on error
-  `clear(username, source)`                `true, "removed"` or `true, "absent"`; `nil, code, message` on error
-  `verify(username, code)`                 `true, "verified"`; `nil, code, message` on error
-  `resend_verification(username, source)`  `true`; `nil, code, message` on error
-  `get_reset_address(username)`            The address to use for a password reset, or `nil, reason`
-  `validate(email)`                        The normalized address, or `nil, message`
+| Function | Returns |
+| --- | --- |
+| `get(username)` | The record table, or `nil` |
+| `set(username, email, source)` | `true, "changed"` or `true, "unchanged"`; `nil, code, message` on error |
+| `clear(username, source)` | `true, "removed"` or `true, "absent"`; `nil, code, message` on error |
+| `verify(username, code)` | `true, "verified"`; `nil, code, message` on error |
+| `resend_verification(username, source)` | `true`; `nil, code, message` on error |
+| `get_reset_address(username)` | The address to use for a password reset, or `nil, reason` |
+| `validate(email)` | The normalized address, or `nil, message` |
 
 When `set()` returns `"changed"`, verification has started and a
 verification email has been requested. `verify()` fails with
@@ -166,12 +172,12 @@ A record has the fields `version`, `email`, `status` (`"unverified"` or
 
 The module fires these events on the host:
 
-  Event                                     Payload
-  ----------------------------------------- ----------------------------------------------------------------------
-  `recovery-email-set`                      `username`, `host`, `email`, `previous_email`, `previous_status`, `source`
-  `recovery-email-cleared`                  `username`, `host`, `previous_email`, `previous_status`, `source`
-  `recovery-email-verification-requested`   `username`, `host`, `email`, `code`, `expires`
-  `recovery-email-verified`                 `username`, `host`, `email`
+| Event | Payload |
+| --- | --- |
+| `recovery-email-set` | `username`, `host`, `email`, `previous_email`, `previous_status`, `source` |
+| `recovery-email-cleared` | `username`, `host`, `previous_email`, `previous_status`, `source` |
+| `recovery-email-verification-requested` | `username`, `host`, `email`, `code`, `expires` |
+| `recovery-email-verified` | `username`, `host`, `email` |
 
 `recovery-email-set` fires only when the address actually changes, and
 is followed by `recovery-email-verification-requested`. Neither
@@ -221,10 +227,10 @@ Limitations
 Compatibility
 =============
 
-  Prosody Version   Status
-  ----------------- ---------------------------------------------
-  13.0              Works
-  0.12              Does not work (requires the roles framework)
+| Prosody Version | Status |
+| --- | --- |
+| 13.0 | Works |
+| 0.12 | Does not work (requires the roles framework) |
 
 Tested with Prosody's internal (file) storage and SQL storage
 (SQLite3).
