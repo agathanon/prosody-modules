@@ -193,6 +193,15 @@ describe("mod_recovery_email", function ()
 			invalid("user\u{200B}@example.org");
 		end);
 
+		it("rejects RFC 5322 special characters", function ()
+			for _, c in ipairs({ "(", ")", "<", ">", "[", "]", ":", ";", "\\", ",", '"' }) do
+				invalid("a"..c.."b@example.org");
+				invalid("ab@exa"..c.."mple.org");
+			end
+			invalid("a@[192.0.2.1]");
+			valid("o'brien+tag@example.org");
+		end);
+
 		it("rejects invalid UTF-8", function ()
 			invalid("user\255@example.org");
 			invalid("user\192\128@example.org");

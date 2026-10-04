@@ -58,8 +58,9 @@ code marks the address as verified.
 -   Codes are stored only as salted hashes, and are never logged.
 
 Addresses are trimmed, checked for basic validity (one `@`, a domain with
-a dot, no spaces or control characters, at most 254 bytes) and stored with
-the domain lowercased. Each user can make at most 5 changes in a burst,
+a dot, no spaces or control characters, none of the characters
+`( ) < > [ ] : ; \ , "`, at most 254 bytes) and stored with the domain
+lowercased. Each user can make at most 5 changes in a burst,
 after which one more change becomes available every 12 minutes.
 
 When an account is deleted, its record is removed with it. A record is

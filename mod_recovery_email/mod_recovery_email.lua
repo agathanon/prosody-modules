@@ -57,6 +57,11 @@ function validate(email) --luacheck: ignore 131/validate
 			return nil, "The address must not contain spaces or control characters";
 		end
 	end
+	-- RFC 5322 "specials" are only valid inside quoted strings, which aren't
+	-- supported; some would also change the meaning of email headers
+	if email:find('[()<>%[%]:;\\,"]') then
+		return nil, "The address contains characters that aren't allowed in email addresses";
+	end
 	local local_part, domain = email:match("^([^@]+)@([^@]+)$");
 	if not local_part then
 		return nil, "Enter an address in the form name@example.org";
