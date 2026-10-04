@@ -1,0 +1,132 @@
+# mod_recovery_email: verifying an address with a code
+#
+# The test server's mod_test_recovery_codes sends each code to the user as
+# <code xmlns="urn:test:recovery-code" value="..."/>, instead of email.
+
+[Client] Verifier
+	jid: verifier@localhost
+	password: password
+
+---------
+
+Verifier connects
+
+# Saving an address sends a code
+
+Verifier sends:
+	<iq type="set" id="set" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="email"><value>verifier@example.org</value></field>
+			</x>
+		</command>
+	</iq>
+
+Verifier receives:
+	<message from="localhost">
+		<code xmlns="urn:test:recovery-code" value="{scansion:capture:first_code}"/>
+	</message>
+
+Verifier receives:
+	<iq type="result" id="set" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">Recovery email saved. A verification code has been sent to it.</note>
+		</command>
+	</iq>
+
+# A malformed code counts as a wrong attempt
+
+Verifier sends:
+	<iq type="set" id="wrong" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="code"><value>abc</value></field>
+			</x>
+		</command>
+	</iq>
+
+Verifier receives:
+	<iq type="result" id="wrong" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="error">That code is incorrect. 4 attempts left.</note>
+		</command>
+	</iq>
+
+# Asking for a new code sends one
+
+Verifier sends:
+	<iq type="set" id="resend" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="resend"><value>1</value></field>
+			</x>
+		</command>
+	</iq>
+
+Verifier receives:
+	<message from="localhost">
+		<code xmlns="urn:test:recovery-code" value="{scansion:capture:code}"/>
+	</message>
+
+Verifier receives:
+	<iq type="result" id="resend" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">A new code has been sent.</note>
+		</command>
+	</iq>
+
+# The new code verifies the address
+
+Verifier sends:
+	<iq type="set" id="verify" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="code"><value>${code}</value></field>
+			</x>
+		</command>
+	</iq>
+
+Verifier receives:
+	<iq type="result" id="verify" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="info">Recovery email verified.</note>
+		</command>
+	</iq>
+
+# Once verified, the form no longer shows the verification fields
+
+Verifier sends:
+	<iq type="set" id="open" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute"/>
+	</iq>
+
+Verifier receives:
+	<iq type="result" id="open" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="executing" scansion:strict="no">
+			<x xmlns="jabber:x:data" type="form">
+				<title>Recovery email</title>
+				<instructions>This address can be used to help you regain access to your account. It is stored privately on the server and is not shown to your contacts.</instructions>
+				<field type="fixed" label="Current address" var="current"><value>verifier@example.org (verified)</value></field>
+				<field type="text-single" label="Recovery email address" var="email"><value>verifier@example.org</value></field>
+				<field type="boolean" label="Remove my recovery email" var="remove"><value>0</value></field>
+			</x>
+		</command>
+	</iq>
+
+Verifier sends:
+	<iq type="set" id="again" to="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" action="execute">
+			<x xmlns="jabber:x:data" type="submit">
+				<field var="code"><value>${code}</value></field>
+			</x>
+		</command>
+	</iq>
+
+Verifier receives:
+	<iq type="result" id="again" from="localhost">
+		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
+			<note type="error">Your recovery email is already verified.</note>
+		</command>
+	</iq>
+
+Verifier disconnects

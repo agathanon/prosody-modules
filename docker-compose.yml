@@ -9,12 +9,22 @@ services:
       PROSODY_LOGLEVEL: debug
       PROSODY_PLUGIN_PATHS: /opt/xmpp-modules
       # Comma-separated list of modules under test
-      PROSODY_ENABLE_MODULES: recovery_email
+      PROSODY_ENABLE_MODULES: recovery_email,recovery_email_notify,smtp_async
     volumes:
       - .:/opt/xmpp-modules:ro          # this repo, as the plugin path
       - prosody-data:/var/lib/prosody   # test data; wipe with: docker compose down -v
+      - ./dev/smtp.cfg.lua:/etc/prosody/conf.d/smtp.cfg.lua:ro
     ports:
       - "127.0.0.1:5222:5222"           # local clients only (e.g. Gajim)
+    depends_on:
+      - mailpit
+
+  # Catches all email sent by the dev server; read it at http://127.0.0.1:8025
+  mailpit:
+    image: axllent/mailpit:v1.31
+    command: --smtp-disable-rdns
+    ports:
+      - "127.0.0.1:8025:8025"
 
 volumes:
   prosody-data:

@@ -1,0 +1,104 @@
+---
+labels:
+- 'Stage-Alpha'
+summary: 'Send the emails for mod_recovery_email'
+...
+
+Introduction
+============
+
+This module sends the emails that [mod_recovery_email] calls for:
+
+-   **Verification code:** when a user saves a new recovery address, the
+    code they need to verify it.
+-   **Address changed:** when a verified address is replaced, a notice
+    to the old address.
+-   **Address removed:** when a verified address is removed, a notice to
+    that address.
+
+The notices let the owner of an address find out if someone else changed
+their account's recovery address. They only go to addresses that were
+verified, so the module can't be used to send email to addresses that
+were merely typed in. They name the account and the time of the change,
+but not the new address.
+
+Email is sent with [mod_smtp_async], which must be configured with your
+mail server.
+
+Usage
+=====
+
+```lua
+VirtualHost "example.com"
+    modules_enabled = { "recovery_email", "recovery_email_notify" }
+
+-- mod_smtp_async settings, e.g.:
+smtp_async_server = "smtp.example.net"
+smtp_async_username = "prosody@example.com"
+smtp_async_password = "..."
+```
+
+[mod_recovery_email] and [mod_smtp_async] are loaded automatically.
+
+Configuration
+=============
+
+  Option                      Default                       Description
+  --------------------------- ----------------------------- ---------------------------------------------------
+  `recovery_email_from`       `"noreply@"` + the host       Sender address of the emails
+  `recovery_email_messages`   built-in English texts        Subjects and bodies to use instead (see below)
+
+If Prosody's `contact_info` option has an `admin` entry (as used by
+mod_server_contact_info), the notices tell the reader to contact those
+addresses if the change wasn't theirs. Otherwise they say to contact the
+administrator of the host.
+
+Changing the messages
+---------------------
+
+`recovery_email_messages` can replace the subject or body of any of the
+three emails, for example to translate them:
+
+```lua
+recovery_email_messages = {
+    verification = {
+        subject = "Ihr Bestätigungscode für {jid}";
+        body = [[
+Ihr Bestätigungscode lautet: {code}
+
+Er ist gültig bis {expires}.
+]];
+    };
+}
+```
+
+The keys are `verification`, `replaced` and `removed`, each with an
+optional `subject` and `body`; anything not given keeps its built-in
+text. Messages are plain text. These placeholders are filled in:
+
+  Placeholder      Value
+  ---------------- ----------------------------------------------------------------
+  `{jid}`          The account, e.g. `user@example.com`
+  `{host}`         The host, e.g. `example.com`
+  `{code}`         The verification code (verification email only)
+  `{expires}`      When the code expires, in UTC (verification email only)
+  `{changed_by}`   "from the account" or "by a server administrator" (notices only)
+  `{time}`         When the change happened, in UTC (notices only)
+  `{contact}`      The admin contact addresses from `contact_info`, if any
+
+`{contact&text}` shows `text` only when a contact is configured, and
+`{contact~text}` only when it isn't.
+
+Logging
+=======
+
+Each email is logged with its type and the masked recipient (e.g.
+`a***@example.org`). Codes and full addresses are never logged.
+
+Compatibility
+=============
+
+  Prosody Version   Status
+  ----------------- ---------------------------------------------
+  13.0              Works
+  0.12              Does not work (requires mod_recovery_email)

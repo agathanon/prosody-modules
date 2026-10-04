@@ -20,7 +20,7 @@ Tybalt sends:
 Tybalt receives:
 	<iq type="result" id="change1" from="localhost">
 		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
-			<note type="info">Recovery email saved.</note>
+			<note type="info">Recovery email saved. A verification code has been sent to it.</note>
 		</command>
 	</iq>
 
@@ -36,7 +36,7 @@ Tybalt sends:
 Tybalt receives:
 	<iq type="result" id="change2" from="localhost">
 		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
-			<note type="info">Recovery email saved.</note>
+			<note type="info">Recovery email saved. A verification code has been sent to it.</note>
 		</command>
 	</iq>
 
@@ -52,7 +52,7 @@ Tybalt sends:
 Tybalt receives:
 	<iq type="result" id="change3" from="localhost">
 		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
-			<note type="info">Recovery email saved.</note>
+			<note type="info">Recovery email saved. A verification code has been sent to it.</note>
 		</command>
 	</iq>
 
@@ -68,7 +68,7 @@ Tybalt sends:
 Tybalt receives:
 	<iq type="result" id="change4" from="localhost">
 		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
-			<note type="info">Recovery email saved.</note>
+			<note type="info">Recovery email saved. A verification code has been sent to it.</note>
 		</command>
 	</iq>
 
@@ -84,7 +84,7 @@ Tybalt sends:
 Tybalt receives:
 	<iq type="result" id="change5" from="localhost">
 		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
-			<note type="info">Recovery email saved.</note>
+			<note type="info">Recovery email saved. A verification code has been sent to it.</note>
 		</command>
 	</iq>
 

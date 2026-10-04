@@ -1,5 +1,5 @@
-# Integration test environment: a throwaway Prosody and scansion.
-# Run via test/run-scansion.sh rather than directly.
+# Integration test environment: a throwaway Prosody, scansion, and mail
+# servers. Run via test/run-scansion.sh or test/run-smtp.sh, not directly.
 services:
   prosody:
     image: prosodyim/prosody:13.0
@@ -9,10 +9,36 @@ services:
     volumes:
       - ..:/opt/xmpp-modules:ro
       - ./prosody.cfg.lua:/etc/prosody/prosody.cfg.lua:ro
+      - ./.certs:/certs:ro
+    depends_on:
+      - mailpit
+      - mailpit-tls
     healthcheck:
       test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/5222"]
       interval: 1s
       retries: 30
+
+  # Mail servers for mod_smtp_async, with certificates from test/certs.sh.
+  # "wrongname" reaches the same server under a name its certificate
+  # doesn't cover, to test certificate checks.
+  mailpit:
+    image: axllent/mailpit:v1.31
+    command: >-
+      --smtp-tls-cert /certs/mailpit.crt --smtp-tls-key /certs/mailpit.key
+      --smtp-require-starttls --smtp-auth-file /certs/smtp-auth --smtp-disable-rdns
+    volumes:
+      - ./.certs:/certs:ro
+    networks:
+      default:
+        aliases: [wrongname]
+
+  mailpit-tls:
+    image: axllent/mailpit:v1.31
+    command: >-
+      --smtp-tls-cert /certs/mailpit.crt --smtp-tls-key /certs/mailpit.key
+      --smtp-require-tls --smtp-auth-file /certs/smtp-auth --smtp-disable-rdns
+    volumes:
+      - ./.certs:/certs:ro
 
   scansion:
     build: ./scansion

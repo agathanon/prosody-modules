@@ -19,3 +19,6 @@ docker-compose.override.yml
 .vscode/
 .idea/
 .DS_Store
+
+# Generated test certificates (test/certs.sh)
+test/.certs/

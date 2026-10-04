@@ -24,7 +24,7 @@ Juliet sends:
 Juliet receives:
 	<iq type="result" id="set" from="localhost">
 		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
-			<note type="info">Recovery email saved.</note>
+			<note type="info">Recovery email saved. A verification code has been sent to it.</note>
 		</command>
 	</iq>
 

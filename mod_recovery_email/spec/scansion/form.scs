@@ -57,12 +57,12 @@ Romeo sends:
 Romeo receives:
 	<iq type="result" id="set1" from="localhost">
 		<command xmlns="http://jabber.org/protocol/commands" node="recovery-email" status="completed" sessionid="{scansion:any}">
-			<note type="info">Recovery email saved.</note>
+			<note type="info">Recovery email saved. A verification code has been sent to it.</note>
 		</command>
 	</iq>
 
-# Reopening shows the stored address; submitting it unchanged in the same
-# session changes nothing
+# Reopening shows the stored, unverified address with the verification
+# fields; submitting it unchanged in the same session changes nothing
 
 Romeo sends:
 	<iq type="set" id="open2" to="localhost">
@@ -75,8 +75,10 @@ Romeo receives:
 			<actions execute="complete"><next/><complete/></actions>
 			<x xmlns="jabber:x:data" type="form">
 				<title>Recovery email</title>
-				<instructions>This address can be used to help you regain access to your account. It is stored privately on the server and is not shown to your contacts.</instructions>
+				<instructions>This address can be used to help you regain access to your account. It is stored privately on the server and is not shown to your contacts. To verify your address, enter the code we sent to it.</instructions>
 				<field type="fixed" label="Current address" var="current"><value>Romeo@example.org (unverified)</value></field>
+				<field type="text-single" label="Verification code" var="code"/>
+				<field type="boolean" label="Send a new code" var="resend"/>
 				<field type="text-single" label="Recovery email address" var="email"><value>Romeo@example.org</value></field>
 				<field type="boolean" label="Remove my recovery email" var="remove"><value>0</value></field>
 			</x>

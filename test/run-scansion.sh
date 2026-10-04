@@ -14,6 +14,8 @@ if [ "$#" -eq 0 ]; then
 	set -- mod_*/spec/scansion/*.scs
 fi
 
+test/certs.sh
+
 compose() {
 	docker compose -f test/docker-compose.yml -p prosody-modules-test "$@"
 }

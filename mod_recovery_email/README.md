@@ -13,10 +13,14 @@ the server, and view, change or remove it through an
 the module's own private storage: it is never published via vCard, PEP or
 any other protocol, and only the user and server admins can see it.
 
-This is the storage part of a self-service password reset feature. The
-module itself does not send email, verify addresses, or reset passwords;
-every address is stored with status `unverified`. Other modules can build
-on it through its API and events, described below.
+Users prove they control the address by entering a code that is emailed
+to it. This module creates and checks the codes; it does not send email
+itself. [mod_recovery_email_notify] sends the codes and change notices,
+using [mod_smtp_async].
+
+This is part of a self-service password reset feature. Nothing uses the
+address for password resets yet. Other modules can build on it through
+its API and events, described below.
 
 Usage
 =====
@@ -25,12 +29,32 @@ Add the module to `modules_enabled` on a VirtualHost:
 
 ```lua
 VirtualHost "example.com"
-    modules_enabled = { "recovery_email" }
+    modules_enabled = { "recovery_email", "recovery_email_notify" }
 ```
+
+Without [mod_recovery_email_notify] (or another module that handles the
+`recovery-email-verification-requested` event), codes are created but
+never sent, so no address can be verified.
 
 Users will find "Recovery email" in their client's list of server
 commands (e.g. in Gajim or Cheogram). The form shows the current address
 and lets the user enter a new one or tick "Remove my recovery email".
+
+Verification
+------------
+
+Saving a new address stores it as unverified and emails a 6-digit code
+to it. While the address is unverified, the form also shows a
+"Verification code" field and a "Send a new code" option. Entering the
+code marks the address as verified.
+
+-   Codes are valid for 24 hours by default, and are cancelled after 5
+    wrong attempts. Spaces and hyphens in the code are ignored.
+-   A new code replaces the previous one. Users can request at most 3
+    new codes in a burst, after which one more becomes available every
+    20 minutes.
+-   Changing the address starts verification again for the new address.
+-   Codes are stored only as salted hashes, and are never logged.
 
 Addresses are trimmed, checked for basic validity (one `@`, a domain with
 a dot, no spaces or control characters, at most 254 bytes) and stored with
@@ -45,7 +69,9 @@ a new account that reuses the same username.
 Configuration
 =============
 
-There are no configuration options.
+  Option                           Default        Description
+  -------------------------------- -------------- -----------------------------------------
+  `recovery_email_code_lifetime`   `"24 hours"`   How long a verification code stays valid
 
 Access to the command is controlled by the `adhoc:recovery-email`
 permission, which is granted to `prosody:registered` by default. Anonymous
@@ -67,8 +93,10 @@ Inside an interactive shell, use `recovery:show("user@example.com")`
 and so on.
 
 Addresses set from the shell are validated and stored as `unverified`,
-like any other change. The shell is not rate limited, and changes made
-from it are marked "(via shell)" in the log.
+like any other change, and a verification code is sent to them; the user
+enters it in the ad-hoc command. The shell is not rate limited, and
+changes made from it are marked "(via shell)" in the log. `show` also
+reports whether a code is pending, but never shows the code.
 
 Server logs only ever show masked addresses (e.g. `s***@example.org`).
 
@@ -78,32 +106,47 @@ API
 Other modules can use `module:depends("recovery_email")` to access these
 functions. All of them take the local username on the current host.
 
-  Function                         Returns
-  -------------------------------- ---------------------------------------------------------------
-  `get(username)`                  The record table, or `nil`
-  `set(username, email, source)`   `true, "changed"` or `true, "unchanged"`; `nil, code, message` on error
-  `clear(username, source)`        `true, "removed"` or `true, "absent"`; `nil, code, message` on error
-  `validate(email)`                The normalized address, or `nil, message`
+  Function                                 Returns
+  ---------------------------------------- ---------------------------------------------------------------
+  `get(username)`                          The record table, or `nil`
+  `set(username, email, source)`           `true, "changed"` or `true, "unchanged"`; `nil, code, message` on error
+  `clear(username, source)`                `true, "removed"` or `true, "absent"`; `nil, code, message` on error
+  `verify(username, code)`                 `true, "verified"`; `nil, code, message` on error
+  `resend_verification(username, source)`  `true`; `nil, code, message` on error
+  `validate(email)`                        The normalized address, or `nil, message`
+
+When `set()` returns `"changed"`, verification has started and a
+verification email has been requested. `verify()` fails with
+`not-acceptable` for a wrong code (the message says how many attempts
+remain), `resource-constraint` when the code has expired or used up its
+attempts, `conflict` when the address is already verified, and
+`item-not-found` when there is no address.
 
 `source` is optional: a short label such as `"shell"` that is added to
 the log line for the change, e.g. "(via shell)". Changes made by users
 through the ad-hoc command have none.
 
 A record has the fields `version`, `email`, `status` (`"unverified"` or
-`"verified"`), `created_at`, `updated_at` and `account_created`. The
-fields `verified_at`, `verify_token_hash` and `verify_expires` are
-reserved for address verification.
+`"verified"`), `created_at`, `updated_at`, `account_created` and
+`verified_at`, plus `verify_token_hash`, `verify_expires` and
+`verify_attempts` while a code is pending.
 
 The module fires these events on the host:
 
-  Event                      Payload
-  -------------------------- ------------------------------------------------
-  `recovery-email-set`       `username`, `host`, `email`, `previous_email`
-  `recovery-email-cleared`   `username`, `host`, `previous_email`
+  Event                                     Payload
+  ----------------------------------------- ----------------------------------------------------------------------
+  `recovery-email-set`                      `username`, `host`, `email`, `previous_email`, `previous_status`, `source`
+  `recovery-email-cleared`                  `username`, `host`, `previous_email`, `previous_status`, `source`
+  `recovery-email-verification-requested`   `username`, `host`, `email`, `code`, `expires`
+  `recovery-email-verified`                 `username`, `host`, `email`
 
-`recovery-email-set` fires only when the address actually changes.
-Neither event fires when a record is removed because the account was
-deleted.
+`recovery-email-set` fires only when the address actually changes, and
+is followed by `recovery-email-verification-requested`. Neither
+`recovery-email-set` nor `recovery-email-cleared` fires when a record is
+removed because the account was deleted.
+
+`recovery-email-verification-requested` carries the code itself: handlers
+must never log or store it.
 
 Limitations
 ===========
@@ -132,8 +175,14 @@ Limitations
     does not support quoted local parts (`"john doe"@example.org`), and
     does not convert internationalized domain names, so `ü.example` and
     `xn--tda.example` count as different addresses.
--   **Addresses are not verified.** Every address is stored as
-    `unverified`; nothing confirms that the user controls it.
+-   **Changing the address doesn't require the password.** Someone with
+    brief access to a logged-in session could set and verify their own
+    address. [mod_recovery_email_notify] warns the previous verified
+    address when this happens.
+-   **A 6-digit code is only as safe as its limits.** Someone who can read
+    the server's storage could find a pending code from its hash; the
+    24-hour lifetime and 5-attempt limit are what protect codes in normal
+    use.
 
 Compatibility
 =============
