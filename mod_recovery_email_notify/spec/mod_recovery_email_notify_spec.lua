@@ -75,7 +75,7 @@ describe("mod_recovery_email_notify", function ()
 			assert.equal(1, #s.sent);
 			local m = s.sent[1].message;
 			assert.equal("alice@example.org", m.to);
-			assert.equal("noreply@example.com", m.from);
+			assert.is_nil(m.from); -- left to mod_smtp_async (smtp_async_from)
 			assert.equal("Your verification code for alice@example.com", m.subject);
 			assert.truthy(m.body:find("Your verification code is: 123456\n", 1, true));
 			assert.truthy(m.body:find("valid until 2026-10-03 17:35 UTC.", 1, true));

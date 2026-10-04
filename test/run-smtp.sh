@@ -176,9 +176,11 @@ check "old password no longer works" \
 	"$(shell "> return tostring(($users.test_password('resetter', 'reset.localhost', 'old password')))")" "nil"
 check_contains "used link is refused" "$(web "$reset_path")" "This link is invalid or has expired."
 wait_for_mail resetter@example.org 3
-check_contains "confirmation email arrives" \
-	"$(compose exec -T mailpit wget -qO- "http://localhost:8025/api/v1/search?query=to:resetter@example.org")" \
-	"The password for resetter@reset.localhost was reset"
+resetter_mail=$(compose exec -T mailpit wget -qO- "http://localhost:8025/api/v1/search?query=to:resetter@example.org")
+check_contains "confirmation email arrives" "$resetter_mail" "The password for resetter@reset.localhost was reset"
+check_contains "notifier uses smtp_async_from when recovery_email_from isn't set" \
+	"$resetter_mail" '"Address":"accounts@reset.localhost"'
+
 
 if compose logs prosody 2>&1 | grep -qF "${reset_path##*/}"; then
 	echo "FAIL  logs contain a reset token"

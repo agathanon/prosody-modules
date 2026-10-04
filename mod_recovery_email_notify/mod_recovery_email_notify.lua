@@ -94,7 +94,9 @@ If you didn't, someone else may have access to this email account.
 	};
 };
 
-local from = module:get_option_string("recovery_email_from", "noreply@"..module.host);
+-- Without it, mod_smtp_async's sender (smtp_async_from) is used, so one
+-- setting is enough when the mail account may only send as one address
+local from = module:get_option_string("recovery_email_from");
 
 -- Built-in texts, with any subjects and bodies overridden from the config
 local messages = {};

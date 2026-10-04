@@ -72,4 +72,6 @@ VirtualHost "reset.localhost"
 	authentication = "internal_hashed"
 	modules_enabled = { "recovery_email", "recovery_email_notify", "recovery_email_reset", "smtp_async" }
 	smtp_async_server = "mailpit"
+	-- No recovery_email_from: the notifier must use this sender
+	smtp_async_from = "accounts@reset.localhost"
 	http_external_url = "http://reset.localhost:5280/"
