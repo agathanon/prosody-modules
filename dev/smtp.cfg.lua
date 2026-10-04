@@ -3,8 +3,7 @@
 -- login, which is only acceptable because Mailpit runs next to Prosody.
 --luacheck: ignore
 
--- The image includes this file after its host definitions, so reopen the
--- host to set options on it
+-- Options for the dev VirtualHost
 VirtualHost "localhost"
 	smtp_async_server = "mailpit"
 	smtp_async_port = 1025
