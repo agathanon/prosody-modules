@@ -162,14 +162,20 @@ local function create_token(username, email)
 	local hash = hash_token(token);
 	local expires = os.time() + link_lifetime;
 	local previous = pending:get(username);
-	if previous then
-		tokens:set(previous.hash, nil);
-	end
 	local ok, err = tokens:set(hash, { username = username; email = email; expires = expires });
 	if not ok then
 		return nil, err;
 	end
-	pending:set(username, { hash = hash });
+	ok, err = pending:set(username, { hash = hash });
+	if not ok then
+		-- Untracked, the link couldn't be cancelled by a new request or a
+		-- password change, so don't keep it
+		tokens:set(hash, nil);
+		return nil, err;
+	end
+	if previous then
+		tokens:set(previous.hash, nil);
+	end
 	return token, expires;
 end
 

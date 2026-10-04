@@ -25,17 +25,21 @@ end
 
 local function new_store()
 	local data = {};
-	return {
-		data = data;
-		get = function (_, key) return data[key]; end;
-		set = function (_, key, value) data[key] = value; return true; end;
-		users = function ()
-			local keys = {};
-			for k in pairs(data) do keys[#keys+1] = k; end
-			local i = 0;
-			return function () i = i + 1; return keys[i]; end;
-		end;
-	};
+	local store = { data = data };
+	store.get = function (_, key) return data[key]; end;
+	-- set store.fail to make writes fail
+	store.set = function (_, key, value)
+		if store.fail then return nil, "storage error"; end
+		data[key] = value;
+		return true;
+	end;
+	store.users = function ()
+		local keys = {};
+		for k in pairs(data) do keys[#keys+1] = k; end
+		local i = 0;
+		return function () i = i + 1; return keys[i]; end;
+	end;
+	return store;
 end
 
 local function to_hex(s)
@@ -371,6 +375,21 @@ describe("mod_recovery_email_reset", function ()
 			http(s, "POST", "/", { jid = "a" }, "10.0.0.1", { x_forwarded_for = "198.51.100.9" });
 			http(s, "POST", "/", { jid = "a" }, "10.0.0.1", { x_forwarded_for = "198.51.100.9" });
 			assert.equal(1, proxy_warnings());
+		end);
+
+		it("keep no untracked link when storage fails", function ()
+			local first = request_link(s);
+			s.stores.recovery_email_reset_pending.fail = true;
+			local status, body = http(s, "POST", "/", { jid = "alice@example.com" });
+			-- same answer, no email, no extra token, and the earlier link still works
+			assert.equal(200, status);
+			assert.truthy(text(body):find("we&apos;ve sent a link", 1, true));
+			assert.equal(1, #s.events);
+			local count = 0;
+			for _ in pairs(s.stores.recovery_email_reset_tokens.data) do count = count + 1; end
+			assert.equal(1, count);
+			s.stores.recovery_email_reset_pending.fail = nil;
+			assert.equal(200, (http(s, "GET", "/reset/"..first)));
 		end);
 
 		it("replace the previous link", function ()
