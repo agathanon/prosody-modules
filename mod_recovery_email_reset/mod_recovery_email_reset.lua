@@ -4,6 +4,7 @@ local formdecode = require "prosody.util.http".formdecode;
 local hashes = require "prosody.util.hashes";
 local id = require "prosody.util.id";
 local interpolation = require "prosody.util.interpolation";
+local ip_util = require "prosody.util.ip";
 local jid_prepped_split = require "prosody.util.jid".prepped_split;
 local modulemanager = require "prosody.core.modulemanager";
 local throttle = require "prosody.util.throttle";
@@ -116,6 +117,35 @@ local function new_throttles(limit)
 	end;
 end
 
+-- The key for a client's per-IP limits. An IPv6 client usually controls a
+-- whole /64, so the limit applies to the /64.
+local function client_key(ip)
+	local parsed = ip and ip_util.new_ip(ip);
+	if not parsed then
+		return ip or "unknown";
+	elseif parsed.proto ~= "IPv6" then
+		return parsed.normal;
+	elseif parsed.packed:sub(1, 12) == ("\0"):rep(10).."\255\255" then
+		return ip:match("([%d%.]+)$") or ip; -- IPv4-mapped (::ffff:a.b.c.d)
+	end
+	return ip_util.truncate(parsed, 64).normal.."/64";
+end
+
+-- Behind a reverse proxy missing from trusted_proxies, every visitor seems to
+-- come from the proxy, so they all share one per-IP limit. Warn once.
+local warned_untrusted_proxy = false;
+local function check_proxy(request)
+	if warned_untrusted_proxy or not request.headers or not request.headers.x_forwarded_for then
+		return;
+	end
+	local peer = request.conn and request.conn:ip();
+	if peer and peer == request.ip then
+		warned_untrusted_proxy = true;
+		module:log("warn", "Requests from %s carry X-Forwarded-For; if that's a reverse proxy, add it to "
+			.."trusted_proxies, or all visitors behind it share one per-IP rate limit", peer);
+	end
+end
+
 local jid_throttle = new_throttles(requests_per_jid);
 local request_ip_throttle = new_throttles(requests_per_ip);
 local reset_ip_throttle = new_throttles(requests_per_ip);
@@ -190,7 +220,8 @@ end
 
 local function handle_request(event)
 	local request = event.request;
-	local ip = request.ip or "unknown";
+	check_proxy(request);
+	local ip = client_key(request.ip);
 	if not request_ip_throttle(ip):poll(1) then
 		module:log("debug", "Too many reset requests from %s", ip);
 		return too_many_requests(event);
@@ -288,7 +319,8 @@ end
 
 local function post_reset(event, token)
 	local request = event.request;
-	local ip = request.ip or "unknown";
+	check_proxy(request);
+	local ip = client_key(request.ip);
 	if not reset_ip_throttle(ip):poll(1) then
 		module:log("debug", "Too many password submissions from %s", ip);
 		return too_many_requests(event);
