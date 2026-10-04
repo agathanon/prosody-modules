@@ -252,7 +252,9 @@ function clear(username, source) --luacheck: ignore 131/clear
 		return nil, "internal-server-error", "Unable to remove the address";
 	end
 	module:log("info", "Recovery email for %s (%s) removed%s", username, mask(record.email), via(source));
-	if record.status == "verified" and reset_delay > 0 then
+	-- Remember removals of verified addresses, and of addresses that replaced
+	-- one, so that removing and re-adding can't skip the cooling-off period
+	if (record.status == "verified" or record.replaced_verified) and reset_delay > 0 then
 		local removed_ok, removed_err = removed_store:set(username, { at = os.time() });
 		if not removed_ok then
 			module:log("error", "Unable to record removal of recovery email for %s: %s", username, removed_err);

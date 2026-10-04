@@ -488,6 +488,15 @@ describe("mod_recovery_email", function ()
 				assert.is_nil(s.removed.data.alice);
 			end);
 
+			it("can't be skipped by removing an unverified replacement first", function ()
+				-- Found in review: set B (flagged), remove B, then set and verify C
+				set_verified("a@example.org");
+				env.set("alice", "b@example.org");
+				env.clear("alice");
+				set_verified("c@example.org");
+				assert_cooling_off();
+			end);
+
 			it("doesn't apply once the removal is older than the delay", function ()
 				set_verified("a@example.org");
 				env.clear("alice");
